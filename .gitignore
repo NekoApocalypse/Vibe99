@@ -1,5 +1,6 @@
 node_modules/
-artifacts/
+artifacts/*
+!artifacts/readme-demo.gif
 dist/
 out/
 .DS_Store

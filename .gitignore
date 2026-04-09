@@ -1,6 +1,9 @@
 node_modules/
 artifacts/*
 !artifacts/readme-demo.gif
+origin_assets/*
+!origin_assets/.gitkeep
+!origin_assets/README.md
 dist/
 out/
 .DS_Store

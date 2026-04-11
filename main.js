@@ -1,41 +1,91 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const pty = require('node-pty');
+const pty = require('@homebridge/node-pty-prebuilt-multiarch');
+
+const PTY_PACKAGE_NAME = '@homebridge/node-pty-prebuilt-multiarch';
 
 const isCaptureMode = process.env.VIBE99_CAPTURE === '1';
-const captureOutputPath = path.join('/tmp', 'vibe99-prototype.png');
 const terminalSessions = new Map();
+
+function getDefaultWorkingDirectory() {
+  return app.isPackaged ? app.getPath('home') : process.cwd();
+}
+
+function getCaptureOutputPath() {
+  return path.join(os.tmpdir(), 'vibe99-prototype.png');
+}
 
 function ensurePtyHelperExecutable() {
   if (process.platform !== 'darwin') {
     return;
   }
 
-  const helperPath = path.join(
-    path.dirname(require.resolve('node-pty/package.json')),
-    'prebuilds',
-    process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64',
-    'spawn-helper'
+  const nodePtyRoot = path.dirname(require.resolve(`${PTY_PACKAGE_NAME}/package.json`)).replace(
+    `${path.sep}app.asar${path.sep}`,
+    `${path.sep}app.asar.unpacked${path.sep}`
   );
 
-  try {
-    fs.chmodSync(helperPath, 0o755);
-  } catch {}
+  const helperCandidates = [
+    path.join(nodePtyRoot, 'build', 'Release', 'spawn-helper'),
+    path.join(
+      nodePtyRoot,
+      'prebuilds',
+      process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64',
+      'spawn-helper'
+    ),
+  ];
+
+  for (const helperPath of helperCandidates) {
+    try {
+      fs.chmodSync(helperPath, 0o755);
+      return;
+    } catch {}
+  }
 }
 
-function getShellLaunchConfig() {
+function isExecutableFile(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getShellLaunchConfigs() {
   if (process.platform === 'win32') {
-    return {
-      shell: 'powershell.exe',
-      args: [],
-    };
+    return [{ shell: 'powershell.exe', args: [] }];
   }
 
-  return {
-    shell: process.env.SHELL || '/bin/zsh',
-    args: ['-il'],
-  };
+  const candidates = [];
+
+  if (process.env.SHELL && path.isAbsolute(process.env.SHELL)) {
+    candidates.push(process.env.SHELL);
+  }
+
+  if (process.platform === 'darwin') {
+    candidates.push('/bin/zsh', '/bin/bash', '/bin/sh');
+  } else {
+    candidates.push('/bin/bash', '/bin/sh');
+  }
+
+  return [...new Set(candidates)]
+    .filter((shell) => isExecutableFile(shell))
+    .map((shell) => ({ shell, args: ['-il'] }));
+}
+
+function getSpawnWorkingDirectory(cwd) {
+  const preferredCwd = cwd || getDefaultWorkingDirectory();
+
+  try {
+    if (fs.statSync(preferredCwd).isDirectory()) {
+      return preferredCwd;
+    }
+  } catch {}
+
+  return app.getPath('home');
 }
 
 function destroyTerminalSession(paneId) {
@@ -61,19 +111,36 @@ ipcMain.handle('vibe99:terminal-create', (event, payload) => {
   const { paneId, cols, rows, cwd } = payload;
   destroyTerminalSession(paneId);
 
-  const { shell, args } = getShellLaunchConfig();
   const webContents = event.sender;
-  const terminalPty = pty.spawn(shell, args, {
-    name: 'xterm-256color',
-    cols: Math.max(20, cols || 80),
-    rows: Math.max(8, rows || 24),
-    cwd: cwd || process.cwd(),
-    env: {
-      ...process.env,
-      COLORTERM: 'truecolor',
-      TERM: 'xterm-256color',
-    },
-  });
+  const spawnCwd = getSpawnWorkingDirectory(cwd);
+  const shellConfigs = getShellLaunchConfigs();
+  let terminalPty;
+  let lastError;
+
+  for (const { shell, args } of shellConfigs) {
+    try {
+      terminalPty = pty.spawn(shell, args, {
+        name: 'xterm-256color',
+        cols: Math.max(20, cols || 80),
+        rows: Math.max(8, rows || 24),
+        cwd: spawnCwd,
+        env: {
+          ...process.env,
+          COLORTERM: 'truecolor',
+          TERM: 'xterm-256color',
+        },
+      });
+      console.log(`pty-spawn-success shell=${shell} cwd=${spawnCwd}`);
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error(`pty-spawn-failed shell=${shell} cwd=${spawnCwd}`, error);
+    }
+  }
+
+  if (!terminalPty) {
+    throw lastError ?? new Error(`No executable shell found for cwd ${spawnCwd}`);
+  }
 
   terminalPty.onData((data) => {
     if (!webContents.isDestroyed()) {
@@ -126,6 +193,7 @@ function createWindow() {
     autoHideMenuBar: true,
     show: !isCaptureMode,
     webPreferences: {
+      additionalArguments: [`--vibe99-default-cwd=${getDefaultWorkingDirectory()}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -160,7 +228,7 @@ function createWindow() {
           console.error('capture-snapshot-error', error);
         }
         const image = await window.webContents.capturePage();
-        fs.writeFileSync(captureOutputPath, image.toPNG());
+        fs.writeFileSync(getCaptureOutputPath(), image.toPNG());
         app.quit();
       }, 2500);
     });
@@ -183,7 +251,5 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });

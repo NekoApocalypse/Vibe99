@@ -1,0 +1,30 @@
+[tool.towncrier]
+name = "Vibe99"
+directory = "changes"
+filename = "CHANGELOG.md"
+start_string = "<!-- towncrier release notes start -->\n"
+title_format = "## {version} - {project_date}"
+issue_format = "[#{issue}](https://github.com/NekoApocalypse/Vibe99/issues/{issue})"
+orphan_prefix = "+"
+issue_pattern = "\\+[a-z0-9][a-z0-9._-]*"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Added"
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Fixed"
+
+[[tool.towncrier.type]]
+directory = "doc"
+name = "Documentation"
+
+[[tool.towncrier.type]]
+directory = "removal"
+name = "Removed"
+
+[[tool.towncrier.type]]
+directory = "misc"
+name = "Misc"
+showcontent = false

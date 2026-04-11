@@ -26,7 +26,7 @@ This repository is an active Electron prototype, not a polished packaged app.
 
 What already works:
 
-- real PTY-backed terminal sessions via `node-pty`
+- real PTY-backed terminal sessions via `@homebridge/node-pty-prebuilt-multiarch`
 - `xterm.js` rendering inside the app window
 - a horizontal deck layout with one focused pane and narrow preview panes
 - add pane, close pane, focus pane, and drag-reorder tabs
@@ -50,6 +50,8 @@ Agentic coding workflows usually do not work like that. One terminal is typicall
 
 ## Quick Start
 
+Contributor workflow notes live in [CONTRIBUTING.md](/Users/liyunyang/work_2025/vibe99/CONTRIBUTING.md).
+
 Install dependencies and launch the prototype:
 
 ```bash
@@ -63,11 +65,52 @@ For a non-interactive captured render:
 npm run capture
 ```
 
-The capture script writes a PNG to:
+The capture script writes a PNG to your system temp directory:
 
 ```text
-/tmp/vibe99-prototype.png
+<temp>/vibe99-prototype.png
 ```
+
+## Packaging
+
+Cross-platform packaging is set up with Electron Forge:
+
+```bash
+npm run package
+npm run make
+```
+
+`npm run package` creates an unpackaged app bundle for your current platform.
+
+`npm run make` creates installable artifacts for your current platform:
+
+- macOS: `.dmg` and `.zip`
+- Windows: Squirrel installer output
+- Linux: `.deb`, `.rpm`, and `.zip`
+
+Signing and notarization are intentionally not configured yet.
+
+## Changelog And Releases
+
+Release notes are managed with Towncrier and explicit fragment files in [changes/README.md](/Users/liyunyang/work_2025/vibe99/changes/README.md).
+
+This repo does not use issue-numbered changelog fragments. Every user-visible change should add a `+slug.type.md` file under `changes/`.
+
+For a release:
+
+1. Add and review the fragment files.
+2. Build the changelog:
+
+```bash
+python3 -m pip install towncrier
+python3 -m towncrier build --yes --version <version>
+```
+
+3. Commit the updated `CHANGELOG.md`.
+4. Tag the release, for example `v0.2.0`.
+5. Push the commit and tag to GitHub.
+
+Pushing a `v*` tag triggers the GitHub release workflow in [.github/workflows/release.yml](/Users/liyunyang/work_2025/vibe99/.github/workflows/release.yml), which builds the macOS artifacts and publishes them with the matching `CHANGELOG.md` section as the release notes.
 
 ## Basic Controls
 
@@ -85,7 +128,7 @@ The capture script writes a PNG to:
 - Electron
 - `xterm.js`
 - `@xterm/addon-fit`
-- `node-pty`
+- `@homebridge/node-pty-prebuilt-multiarch`
 
 ## Status
 

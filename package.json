@@ -1,20 +1,33 @@
 {
   "name": "vibe99",
-  "version": "0.1.0",
+  "productName": "Vibe99",
+  "version": "0.2.0",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Electron interaction proof of concept for Vibe99",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "capture": "VIBE99_CAPTURE=1 electron ."
+    "capture": "VIBE99_CAPTURE=1 electron .",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "release:notes": "node ./scripts/extract-release-notes.mjs"
   },
   "devDependencies": {
+    "appdmg": "^0.6.6",
+    "@electron-forge/cli": "^7.11.1",
+    "@electron-forge/maker-deb": "^7.11.1",
+    "@electron-forge/maker-dmg": "^7.11.1",
+    "@electron-forge/maker-rpm": "^7.11.1",
+    "@electron-forge/maker-squirrel": "^7.11.1",
+    "@electron-forge/maker-zip": "^7.11.1",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
+    "@electron/rebuild": "^4.0.1",
     "electron": "^36.0.0"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "node-pty": "^1.2.0-beta.12"
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1"
   }
 }

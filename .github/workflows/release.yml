@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package version
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          node -e "const pkg=require('./package.json'); const tag=(process.env.GITHUB_REF_NAME || '').replace(/^v/, ''); if (pkg.version !== tag) { console.error(`Tag ${process.env.GITHUB_REF_NAME} does not match package.json version ${pkg.version}`); process.exit(1); }"
+
+      - name: Build release artifacts
+        run: npm run make
+
+      - name: Extract release notes
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: node ./scripts/extract-release-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          out/make/*.dmg
+          out/make/zip/darwin/arm64/*.zip
+          --title "Vibe99 $GITHUB_REF_NAME"
+          --notes-file release-notes.md
+          --verify-tag

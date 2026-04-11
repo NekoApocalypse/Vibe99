@@ -1,6 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const cwd = process.cwd();
+function getDefaultWorkingDirectory() {
+  const argument = process.argv.find((value) => value.startsWith('--vibe99-default-cwd='));
+  if (argument) {
+    return argument.slice('--vibe99-default-cwd='.length);
+  }
+
+  return process.cwd();
+}
+
+const cwd = getDefaultWorkingDirectory();
 const defaultTabTitle = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
 
 contextBridge.exposeInMainWorld('vibe99', {

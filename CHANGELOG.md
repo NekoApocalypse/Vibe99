@@ -2,6 +2,18 @@
 
 <!-- towncrier release notes start -->
 
+## 0.3.0 - 2026-04-11
+
+### Fixed
+
+- Display settings now persist across app restarts instead of resetting to the defaults every time Vibe99 launches.
+- Right-click menus now work for terminals and tabs, and terminal copy and paste shortcuts follow the usual platform conventions.
+
+### Misc
+
+- Repository structure cleanup.
+
+
 ## 0.2.0 - 2026-04-11
 
 ### Added

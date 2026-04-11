@@ -14,8 +14,14 @@ function createUnavailableBridge() {
     writeTerminal: fail,
     resizeTerminal: fail,
     destroyTerminal: fail,
+    readClipboardText: () => Promise.reject(new Error('Clipboard bridge is unavailable')),
+    writeClipboardText: fail,
+    showContextMenu: fail,
+    loadSettings: () => Promise.resolve({}),
+    saveSettings: () => Promise.resolve({}),
     onTerminalData: () => () => {},
     onTerminalExit: () => () => {},
+    onMenuAction: () => () => {},
   };
 }
 
@@ -88,6 +94,7 @@ const settings = {
   paneOpacity: 0.8,
   paneWidth: 720,
 };
+let pendingSettingsSave = null;
 
 const removeTerminalDataListener = bridge.onTerminalData(({ paneId, data }) => {
   const node = paneNodeMap.get(paneId);
@@ -105,6 +112,14 @@ const removeTerminalExitListener = bridge.onTerminalExit(({ paneId, exitCode }) 
   node.sessionReady = false;
   node.terminal.writeln('');
   node.terminal.writeln(`\x1b[38;5;244m[process exited with code ${exitCode}]\x1b[0m`);
+});
+
+const removeMenuActionListener = bridge.onMenuAction(({ action, paneId }) => {
+  try {
+    handleMenuAction(action, paneId);
+  } catch (error) {
+    reportError(error);
+  }
 });
 
 function reportError(error) {
@@ -141,6 +156,48 @@ function applySettings() {
   paneOpacityRangeEl.value = settings.paneOpacity.toFixed(2);
   paneOpacityInputEl.value = settings.paneOpacity.toFixed(2);
   paneOpacityValueEl.textContent = settings.paneOpacity.toFixed(2);
+}
+
+function applyPersistedSettings(nextSettings) {
+  if (!nextSettings || typeof nextSettings !== 'object') {
+    return;
+  }
+
+  const uiSettings =
+    nextSettings && typeof nextSettings.ui === 'object' && nextSettings.ui !== null
+      ? nextSettings.ui
+      : nextSettings;
+
+  if (Number.isFinite(uiSettings.fontSize)) {
+    settings.fontSize = uiSettings.fontSize;
+  }
+
+  if (Number.isFinite(uiSettings.paneOpacity)) {
+    settings.paneOpacity = uiSettings.paneOpacity;
+  }
+
+  if (Number.isFinite(uiSettings.paneWidth)) {
+    settings.paneWidth = uiSettings.paneWidth;
+  }
+}
+
+function scheduleSettingsSave() {
+  if (pendingSettingsSave !== null) {
+    window.clearTimeout(pendingSettingsSave);
+  }
+
+  pendingSettingsSave = window.setTimeout(() => {
+    pendingSettingsSave = null;
+    void bridge.saveSettings({ version: 1, ui: settings }).catch(reportError);
+  }, 150);
+}
+
+function flushSettingsSave() {
+  if (pendingSettingsSave !== null) {
+    window.clearTimeout(pendingSettingsSave);
+    pendingSettingsSave = null;
+    void bridge.saveSettings({ version: 1, ui: settings }).catch(reportError);
+  }
 }
 
 function createTerminalTheme(accent) {
@@ -209,6 +266,10 @@ function createTab(pane, index, focusedIndex, dragMeta) {
   }
   tab.style.setProperty('--pane-accent', pane.accent);
   tab.dataset.paneId = pane.id;
+  tab.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    void showTabContextMenu(pane.id, event);
+  });
 
   const tabMain = document.createElement('button');
   tabMain.type = 'button';
@@ -328,6 +389,12 @@ function createPane(pane) {
     needsFit: true,
     accent: pane.accent,
   };
+
+  terminalHost.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    focusPane(node.paneId, { focusTerminal: false });
+    void showTerminalContextMenu(node, event);
+  });
 
   terminal.onData((data) => {
     if (node.sessionReady) {
@@ -708,6 +775,114 @@ function isEditableTarget() {
   );
 }
 
+function getPaneIndex(paneId) {
+  return panes.findIndex((pane) => pane.id === paneId);
+}
+
+function getPaneNode(paneId) {
+  return paneNodeMap.get(paneId) ?? null;
+}
+
+function copyTerminalSelection(paneId = focusedPaneId) {
+  const node = getPaneNode(paneId);
+  if (!node) {
+    return false;
+  }
+
+  const selection = node.terminal.getSelection();
+  if (!selection) {
+    return false;
+  }
+
+  bridge.writeClipboardText(selection);
+  return true;
+}
+
+async function pasteIntoTerminal(paneId = focusedPaneId) {
+  const node = getPaneNode(paneId);
+  if (!node?.sessionReady) {
+    return false;
+  }
+
+  const text = await bridge.readClipboardText();
+  if (!text) {
+    return false;
+  }
+
+  bridge.writeTerminal({ paneId: node.paneId, data: text });
+  return true;
+}
+
+function selectAllInTerminal(paneId = focusedPaneId) {
+  const node = getPaneNode(paneId);
+  if (!node) {
+    return false;
+  }
+
+  node.terminal.selectAll();
+  return true;
+}
+
+async function showTerminalContextMenu(node, event) {
+  await bridge.showContextMenu({
+    kind: 'terminal',
+    paneId: node.paneId,
+    hasSelection: node.terminal.hasSelection(),
+    x: event.x,
+    y: event.y,
+  });
+}
+
+async function showTabContextMenu(paneId, event) {
+  const paneIndex = getPaneIndex(paneId);
+  if (paneIndex === -1) {
+    return;
+  }
+
+  focusedPaneId = paneId;
+  render();
+
+  await bridge.showContextMenu({
+    kind: 'tab',
+    paneId,
+    canClose: panes.length > 1,
+    x: event.x,
+    y: event.y,
+  });
+}
+
+function handleMenuAction(action, paneId) {
+  if (action === 'terminal-copy') {
+    copyTerminalSelection(paneId);
+    return;
+  }
+
+  if (action === 'terminal-paste') {
+    void pasteIntoTerminal(paneId);
+    return;
+  }
+
+  if (action === 'terminal-select-all') {
+    selectAllInTerminal(paneId);
+    return;
+  }
+
+  if (action === 'tab-rename') {
+    const paneIndex = getPaneIndex(paneId);
+    if (paneIndex !== -1) {
+      beginRenamePane(paneIndex);
+    }
+    return;
+  }
+
+  if (action === 'tab-close') {
+    const paneIndex = getPaneIndex(paneId);
+    if (paneIndex !== -1) {
+      closePane(paneIndex);
+    }
+  }
+}
+
 function blurFocusedTerminal() {
   const node = paneNodeMap.get(focusedPaneId);
   if (node) {
@@ -750,6 +925,12 @@ window.addEventListener(
       : event.ctrlKey && !event.metaKey && !event.altKey && key === 't';
     const enterNavigationHotkey =
       event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && key === 'b';
+    const copyHotkey = isMac
+      ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === 'c'
+      : event.ctrlKey && !event.metaKey && !event.altKey && event.shiftKey && key === 'c';
+    const pasteHotkey = isMac
+      ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === 'v'
+      : event.ctrlKey && !event.metaKey && !event.altKey && event.shiftKey && key === 'v';
 
     if (openTabHotkey) {
       event.preventDefault();
@@ -760,6 +941,19 @@ window.addEventListener(
     if (enterNavigationHotkey && document.activeElement?.tagName !== 'INPUT') {
       event.preventDefault();
       enterNavigationMode();
+      return;
+    }
+
+    if (copyHotkey && document.activeElement?.tagName !== 'INPUT') {
+      if (copyTerminalSelection()) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (pasteHotkey && document.activeElement?.tagName !== 'INPUT') {
+      event.preventDefault();
+      void pasteIntoTerminal();
       return;
     }
 
@@ -814,6 +1008,7 @@ fontSizeInputEl.addEventListener('change', () => {
   settings.fontSize = Math.max(10, Math.min(24, Math.round(nextValue)));
   applySettings();
   render(true);
+  scheduleSettingsSave();
 });
 
 function updatePaneWidth(nextValue) {
@@ -826,6 +1021,7 @@ function updatePaneWidth(nextValue) {
   settings.paneWidth = Math.max(520, Math.min(1000, Math.round(parsedValue / 10) * 10));
   applySettings();
   render(true);
+  scheduleSettingsSave();
 }
 
 function updatePaneOpacity(nextValue) {
@@ -837,6 +1033,7 @@ function updatePaneOpacity(nextValue) {
 
   settings.paneOpacity = Math.max(0.55, Math.min(1, Number(parsedValue.toFixed(2))));
   applySettings();
+  scheduleSettingsSave();
 }
 
 paneWidthRangeEl.addEventListener('input', () => {
@@ -879,8 +1076,9 @@ window.addEventListener('resize', () => {
   }
 });
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   try {
+    applyPersistedSettings(await bridge.loadSettings());
     applySettings();
     render(true);
   } catch (error) {
@@ -889,8 +1087,10 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('beforeunload', () => {
+  flushSettingsSave();
   removeTerminalDataListener();
   removeTerminalExitListener();
+  removeMenuActionListener();
 });
 
 window.addEventListener('error', (event) => {

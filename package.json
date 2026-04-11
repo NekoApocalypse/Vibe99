@@ -7,9 +7,14 @@
   "description": "Electron interaction proof of concept for Vibe99",
   "main": "electron/main.js",
   "scripts": {
+    "build:config": "tsc -p tsconfig.config.json",
+    "prestart": "npm run build:config",
     "start": "electron .",
+    "precapture": "npm run build:config",
     "capture": "VIBE99_CAPTURE=1 electron .",
+    "prepackage": "npm run build:config",
     "package": "electron-forge package",
+    "premake": "npm run build:config",
     "make": "electron-forge make",
     "release:notes": "node ./scripts/extract-release-notes.mjs"
   },
@@ -23,7 +28,8 @@
     "@electron-forge/maker-zip": "^7.11.1",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron/rebuild": "^4.0.1",
-    "electron": "^36.0.0"
+    "electron": "^36.0.0",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

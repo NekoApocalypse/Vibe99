@@ -91,6 +91,12 @@ The release workflow extracts the matching section from `CHANGELOG.md`, so the g
 
 The current GitHub release workflow is in `.github/workflows/release.yml`.
 
+Important:
+
+- Merging fragment files does not update `CHANGELOG.md` automatically.
+- `CHANGELOG.md` only changes when someone explicitly runs `towncrier build --yes --version <version>` and commits the generated output.
+- Do not cut a release tag until the generated changelog commit is already on `main`.
+
 For a release:
 
 1. Bump the version in `package.json`.

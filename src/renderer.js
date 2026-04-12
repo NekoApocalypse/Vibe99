@@ -1,5 +1,6 @@
 import { Terminal } from '../node_modules/@xterm/xterm/lib/xterm.mjs';
 import { FitAddon } from '../node_modules/@xterm/addon-fit/lib/addon-fit.mjs';
+import { WebLinksAddon } from '../node_modules/@xterm/addon-web-links/lib/addon-web-links.mjs';
 
 function createUnavailableBridge() {
   const fail = () => {
@@ -16,6 +17,7 @@ function createUnavailableBridge() {
     destroyTerminal: fail,
     readClipboardText: () => Promise.reject(new Error('Clipboard bridge is unavailable')),
     writeClipboardText: fail,
+    openExternalUrl: fail,
     showContextMenu: fail,
     loadSettings: () => Promise.resolve({}),
     saveSettings: () => Promise.resolve({}),
@@ -226,6 +228,20 @@ function createTerminalTheme(accent) {
   };
 }
 
+function isLinkOpenModifierPressed(event) {
+  return event.ctrlKey || (bridge.platform === 'darwin' && event.metaKey);
+}
+
+function handleTerminalLinkActivation(event, uri) {
+  if (!isLinkOpenModifierPressed(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  void bridge.openExternalUrl(uri).catch(reportError);
+}
+
 function getFocusedIndex() {
   const focusedIndex = panes.findIndex((pane) => pane.id === focusedPaneId);
   if (focusedIndex !== -1) {
@@ -374,7 +390,9 @@ function createPane(pane) {
     theme: createTerminalTheme(pane.accent),
   });
   const fitAddon = new FitAddon();
+  const webLinksAddon = new WebLinksAddon(handleTerminalLinkActivation);
   terminal.loadAddon(fitAddon);
+  terminal.loadAddon(webLinksAddon);
   terminal.open(terminalHost);
 
   const node = {

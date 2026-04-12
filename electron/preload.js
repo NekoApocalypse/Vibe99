@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { contextBridge, ipcRenderer, clipboard, shell } = require('electron');
 
 function getDefaultWorkingDirectory() {
   const argument = process.argv.find((value) => value.startsWith('--vibe99-default-cwd='));
@@ -12,6 +12,15 @@ function getDefaultWorkingDirectory() {
 const cwd = getDefaultWorkingDirectory();
 const defaultTabTitle = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
 
+function openExternalUrl(url) {
+  const parsed = new URL(url);
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`Unsupported URL protocol: ${parsed.protocol}`);
+  }
+
+  return shell.openExternal(parsed.toString());
+}
+
 contextBridge.exposeInMainWorld('vibe99', {
   platform: process.platform,
   defaultCwd: cwd,
@@ -22,6 +31,7 @@ contextBridge.exposeInMainWorld('vibe99', {
   destroyTerminal: (payload) => ipcRenderer.invoke('vibe99:terminal-destroy', payload),
   readClipboardText: () => clipboard.readText(),
   writeClipboardText: (text) => clipboard.writeText(text),
+  openExternalUrl,
   showContextMenu: (payload) => ipcRenderer.invoke('vibe99:show-context-menu', payload),
   loadSettings: () => ipcRenderer.invoke('vibe99:settings-load'),
   saveSettings: (payload) => ipcRenderer.invoke('vibe99:settings-save', payload),

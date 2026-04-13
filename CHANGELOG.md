@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.4.3 - 2026-04-13
+
+### Fixed
+
+- Fixed Linux release packaging so the published AppImage launches correctly and the GitHub release workflow ships the portable Linux artifacts by default.
+
+
 ## 0.4.2 - 2026-04-13
 
 ### Fixed

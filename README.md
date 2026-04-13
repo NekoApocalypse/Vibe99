@@ -6,7 +6,7 @@ Vibe99 is a desktop terminal workspace for agentic coding. It is built for the c
 
 ## Quick Start
 
-Linux users can install from the [GitHub Releases page](https://github.com/NekoApocalypse/Vibe99/releases), which provides `.AppImage`, `.deb`, and `.zip` artifacts.
+Linux users can install from the [GitHub Releases page](https://github.com/NekoApocalypse/Vibe99/releases), which provides `.AppImage` and `.zip` artifacts.
 
 Other users should clone this repository and run the prototype locally:
 
@@ -37,4 +37,3 @@ npm start
 
 ## Contributing
 See [CONTRIBUTING.md](/Users/liyunyang/work_2025/vibe99/CONTRIBUTING.md).
-

@@ -15,6 +15,11 @@ class MakerAppImage extends MakerBase {
 
   async make({ dir, makeDir, targetArch }) {
     const outputDir = path.resolve(makeDir, 'AppImage', targetArch);
+    const linuxConfig = {
+      target: ['AppImage'],
+      executableName: 'Vibe99',
+      ...(this.config.linux ?? {}),
+    };
 
     await this.ensureDirectory(outputDir);
 
@@ -22,13 +27,14 @@ class MakerAppImage extends MakerBase {
       prepackaged: dir,
       publish: 'never',
       config: {
+        appId: 'com.vibe99.app',
         directories: {
           output: outputDir,
         },
-        linux: {
-          target: ['AppImage'],
-        },
+        executableName: 'Vibe99',
+        linux: linuxConfig,
         ...this.config,
+        linux: linuxConfig,
       },
     });
 

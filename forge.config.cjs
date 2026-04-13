@@ -12,8 +12,6 @@ const platformIcons = {
   win32: path.join(__dirname, 'assets', 'icons', 'icon.ico'),
 };
 
-const enableLinuxDeb = process.platform !== 'linux' || process.env.VIBE99_ENABLE_DEB === '1';
-
 const makers = [
   new MakerSquirrel({
     authors: 'Vibe99',
@@ -24,6 +22,20 @@ const makers = [
   new MakerZIP({}, ['darwin', 'linux']),
   new MakerDMG({
     format: 'ULFO',
+  }),
+  new MakerDeb({
+    options: {
+      bin: 'Vibe99',
+      categories: ['Development', 'TerminalEmulator'],
+      description: 'Focus-first desktop terminal workspace for agentic coding',
+      genericName: 'Terminal Workspace',
+      homepage: 'https://github.com/NekoApocalypse/Vibe99',
+      icon: 'assets/icons/icon.png',
+      maintainer: 'Vibe99',
+      productDescription:
+        'Desktop terminal workspace that keeps one pane readable while the rest stay visible as peripheral context.',
+      section: 'devel',
+    },
   }),
   {
     name: './electron/maker-appimage.cjs',
@@ -36,25 +48,6 @@ const makers = [
     platforms: ['linux'],
   },
 ];
-
-if (enableLinuxDeb) {
-  makers.push(
-    new MakerDeb({
-      options: {
-        bin: 'Vibe99',
-        categories: ['Development', 'TerminalEmulator'],
-        description: 'Focus-first desktop terminal workspace for agentic coding',
-        genericName: 'Terminal Workspace',
-        homepage: 'https://github.com/NekoApocalypse/Vibe99',
-        icon: 'assets/icons/icon.png',
-        maintainer: 'Vibe99',
-        productDescription:
-          'Desktop terminal workspace that keeps one pane readable while the rest stay visible as peripheral context.',
-        section: 'devel',
-      },
-    })
-  );
-}
 
 if (process.platform !== 'linux' || process.env.VIBE99_ENABLE_RPM === '1') {
   makers.push(new MakerRpm({}));

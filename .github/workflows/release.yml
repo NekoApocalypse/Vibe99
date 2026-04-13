@@ -18,6 +18,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg fakeroot
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -42,6 +45,7 @@ jobs:
           name: release-linux
           path: |
             out/make/AppImage/**/*.AppImage
+            out/make/deb/**/*.deb
             out/make/zip/linux/**/*.zip
           if-no-files-found: error
 

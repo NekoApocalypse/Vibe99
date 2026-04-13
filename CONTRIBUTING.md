@@ -43,7 +43,7 @@ sudo apt install dpkg fakeroot
 
 - macOS: local-only packaging output
 - Windows: Squirrel installer output
-- Linux: `.AppImage` and `.zip`
+- Linux: `.AppImage`, `.deb`, and `.zip`
 
 RPM packaging is opt-in and only runs when `rpmbuild` is installed and `VIBE99_ENABLE_RPM=1` is set.
 

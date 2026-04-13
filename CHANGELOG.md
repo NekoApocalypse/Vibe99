@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.4.4 - 2026-04-13
+
+### Fixed
+
+- Restored Linux `.deb` release packaging in the GitHub release workflow while keeping the fixed AppImage packaging path.
+
+
 ## 0.4.3 - 2026-04-13
 
 ### Fixed

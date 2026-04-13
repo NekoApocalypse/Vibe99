@@ -31,6 +31,24 @@ npm run package
 npm run make
 ```
 
+For Linux packaging on Debian or Ubuntu, install the required system tools first:
+
+```bash
+sudo apt install dpkg fakeroot
+```
+
+`npm run package` creates an unpackaged app bundle for the current platform.
+
+`npm run make` creates installable artifacts for the current platform:
+
+- macOS: local-only packaging output
+- Windows: Squirrel installer output
+- Linux: `.AppImage`, `.deb`, and `.zip`
+
+RPM packaging is opt-in and only runs when `rpmbuild` is installed and `VIBE99_ENABLE_RPM=1` is set.
+
+GitHub Releases currently target Linux only. macOS release artifacts are paused until enough user demand justifies Apple signing and notarization costs.
+
 ## Changelog Rules
 
 Vibe99 uses Towncrier with explicit fragment files. We do not use issue-numbered changelog fragments.
@@ -106,19 +124,7 @@ For a release:
 5. Create a matching tag such as `v0.2.0`.
 6. Push the commit and tag.
 
-Pushing a `v*` tag builds the macOS and Linux artifacts and creates the GitHub release from them.
-
-For Linux packaging on Debian or Ubuntu, install the required system tools first:
-
-```bash
-sudo apt install dpkg fakeroot
-```
-
-The default Linux packaging path produces `.deb` and `.zip` artifacts.
-
-RPM packaging is opt-in and only runs when `rpmbuild` is installed and `VIBE99_ENABLE_RPM=1` is set.
-
-AppImage is intentionally not part of the current release flow because Electron Forge support comes from third-party makers rather than the main Forge packages.
+Pushing a `v*` tag builds the Linux release artifacts and creates the GitHub release from them.
 
 ## Agentic Tools
 

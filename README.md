@@ -52,9 +52,13 @@ Agentic coding workflows usually do not work like that. One terminal is typicall
 
 Contributor workflow notes live in [CONTRIBUTING.md](/Users/liyunyang/work_2025/vibe99/CONTRIBUTING.md).
 
-Install dependencies and launch the prototype:
+Linux users should install from the [GitHub Releases page](https://github.com/NekoApocalypse/Vibe99/releases), which publishes `.AppImage`, `.deb`, and `.zip` artifacts.
+
+Other users should clone this repository and run the prototype locally:
 
 ```bash
+git clone https://github.com/NekoApocalypse/Vibe99.git
+cd Vibe99
 npm install
 npm start
 ```
@@ -85,15 +89,13 @@ npm run make
 
 `npm run make` creates installable artifacts for your current platform:
 
-- macOS: `.dmg` and `.zip`
+- macOS: local-only packaging output
 - Windows: Squirrel installer output
-- Linux: `.deb` and `.zip`
+- Linux: `.AppImage`, `.deb`, and `.zip`
 
 On Linux, RPM packaging is available as an opt-in path with `VIBE99_ENABLE_RPM=1 npm run make` when `rpmbuild` is installed.
 
-AppImage is not part of the release flow yet.
-
-Signing and notarization are intentionally not configured yet.
+GitHub Releases currently target Linux only. macOS release artifacts are intentionally paused until enough user demand justifies Apple signing and notarization costs.
 
 ## Changelog And Releases
 
@@ -115,7 +117,7 @@ python3 -m towncrier build --yes --version <version>
 4. Tag the release, for example `v0.2.0`.
 5. Push the commit and tag to GitHub.
 
-Pushing a `v*` tag triggers the GitHub release workflow in [.github/workflows/release.yml](/Users/liyunyang/work_2025/vibe99/.github/workflows/release.yml), which builds the macOS and Linux artifacts and publishes them with the matching `CHANGELOG.md` section as the release notes.
+Pushing a `v*` tag triggers the GitHub release workflow in [.github/workflows/release.yml](/Users/liyunyang/work_2025/vibe99/.github/workflows/release.yml), which builds the Linux artifacts and publishes them with the matching `CHANGELOG.md` section as the release notes.
 
 ## Basic Controls
 
@@ -137,6 +139,6 @@ Pushing a `v*` tag triggers the GitHub release workflow in [.github/workflows/re
 
 ## Status
 
-The current preferred way to run Vibe99 is `npm start`.
+For now, Linux is the only platform with published release artifacts. On other platforms, the preferred way to run Vibe99 is still `npm start`.
 
 The prototype already demonstrates the main interaction model, but packaging, persistence, and broader workflow support are still evolving. The repository should be read as an active product and UX exploration rather than a finalized desktop application.

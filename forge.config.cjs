@@ -37,6 +37,11 @@ const makers = [
       section: 'devel',
     },
   }),
+  {
+    name: 'electron-installer-appimage',
+    config: {},
+    platforms: ['linux'],
+  },
 ];
 
 if (process.platform !== 'linux' || process.env.VIBE99_ENABLE_RPM === '1') {

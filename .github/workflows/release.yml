@@ -9,42 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  build-macos:
-    runs-on: macos-14
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify tag matches package version
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: |
-          node -e "const pkg=require('./package.json'); const tag=(process.env.GITHUB_REF_NAME || '').replace(/^v/, ''); if (pkg.version !== tag) { console.error(`Tag ${process.env.GITHUB_REF_NAME} does not match package.json version ${pkg.version}`); process.exit(1); }"
-
-      - name: Build release artifacts
-        run: npm run make
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-macos
-          path: |
-            out/make/*.dmg
-            out/make/zip/darwin/**/*.zip
-          if-no-files-found: error
-
   build-linux:
     runs-on: ubuntu-latest
 
@@ -80,6 +44,7 @@ jobs:
         with:
           name: release-linux
           path: |
+            out/make/AppImage/**/*.AppImage
             out/make/deb/**/*.deb
             out/make/zip/linux/**/*.zip
           if-no-files-found: error
@@ -87,7 +52,6 @@ jobs:
   publish-release:
     runs-on: ubuntu-latest
     needs:
-      - build-macos
       - build-linux
 
     steps:

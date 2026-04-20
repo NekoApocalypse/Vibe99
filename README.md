@@ -19,6 +19,8 @@ Linux and Windows users can install from the [GitHub Releases page](https://gith
 - Linux artifacts: `.AppImage`, `.deb`, and `.zip`
 - Windows artifacts: portable `.exe` and `.zip`
 
+If you are on Windows and the portable `.exe` has trouble starting, reports missing DLL files, or launches very slowly, use the Windows `.zip` artifact instead.
+
 macOS users, or anyone who wants to run from source, should clone this repository and start the app locally:
 
 ```bash

@@ -28,7 +28,7 @@ const binPath = isWindows
 const args = isWindows
   ? command === 'package'
     ? ['--win', 'dir']
-    : ['--win', 'portable']
+    : ['--win', 'portable', 'zip']
   : [command];
 
 const result = spawnSync(process.execPath, [binPath, ...args], {

@@ -73,5 +73,5 @@ jobs:
           name: prerelease-windows
           path: |
             out/builder/Vibe99-*-windows-portable-*.exe
-            out/builder/win-unpacked/**
+            out/builder/Vibe99-*-windows-*.zip
           if-no-files-found: error

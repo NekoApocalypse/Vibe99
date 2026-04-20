@@ -26,9 +26,26 @@ function findPortableArtifact() {
   return portableFiles[0] ?? null;
 }
 
+function findZipArtifact() {
+  const entries = fs.readdirSync(outputDir, { withFileTypes: true });
+  const zipFiles = entries
+    .filter(
+      (entry) => entry.isFile() && entry.name.endsWith('.zip') && entry.name.includes('-windows-')
+    )
+    .map((entry) => path.join(outputDir, entry.name))
+    .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+
+  return zipFiles[0] ?? null;
+}
+
 const portableArtifact = findPortableArtifact();
 if (!portableArtifact) {
   throw new Error(`No portable Windows artifact found in ${outputDir}`);
+}
+
+const zipArtifact = findZipArtifact();
+if (!zipArtifact) {
+  throw new Error(`No Windows zip artifact found in ${outputDir}`);
 }
 
 const listResult = spawnSync(path7za, ['l', portableArtifact], {
@@ -65,5 +82,7 @@ if (missingEntries.length > 0) {
 }
 
 console.log(
-  `Verified portable artifact ${path.basename(portableArtifact)} embeds ${requiredEntries.join(', ')}`
+  `Verified Windows artifacts ${path.basename(portableArtifact)} and ${path.basename(
+    zipArtifact
+  )}; portable build embeds ${requiredEntries.join(', ')}`
 );

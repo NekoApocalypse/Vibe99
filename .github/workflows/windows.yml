@@ -32,7 +32,7 @@ jobs:
             throw "Expected capture output at $capture"
           }
 
-      - name: Build Windows portable package
+      - name: Build Windows release packages
         run: npm run make
 
       - name: Upload Windows artifacts
@@ -41,5 +41,5 @@ jobs:
           name: windows-package
           path: |
             out/builder/Vibe99-*-windows-portable-*.exe
-            out/builder/win-unpacked/**
+            out/builder/Vibe99-*-windows-*.zip
           if-no-files-found: error

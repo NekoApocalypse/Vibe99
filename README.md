@@ -14,9 +14,12 @@ Vibe99 is a desktop terminal workspace for agentic coding. It is built for the c
 
 ## Quick Start
 
-Linux users can install from the [GitHub Releases page](https://github.com/NekoApocalypse/Vibe99/releases), which provides `.AppImage`, `.deb`, and `.zip` artifacts.
+Linux and Windows users can install from the [GitHub Releases page](https://github.com/NekoApocalypse/Vibe99/releases).
 
-Other users should clone this repository and run the prototype locally:
+- Linux artifacts: `.AppImage`, `.deb`, and `.zip`
+- Windows artifacts: portable `.exe` and `.zip`
+
+macOS users, or anyone who wants to run from source, should clone this repository and start the app locally:
 
 ```bash
 git clone https://github.com/NekoApocalypse/Vibe99.git

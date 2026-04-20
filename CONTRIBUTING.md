@@ -42,12 +42,12 @@ sudo apt install dpkg fakeroot
 `npm run make` creates installable artifacts for the current platform:
 
 - macOS: local-only packaging output
-- Windows: Squirrel installer output
+- Windows: portable `.exe` and `.zip` output
 - Linux: `.AppImage`, `.deb`, and `.zip`
 
 RPM packaging is opt-in and only runs when `rpmbuild` is installed and `VIBE99_ENABLE_RPM=1` is set.
 
-GitHub Releases currently target Linux only. macOS release artifacts are paused until enough user demand justifies Apple signing and notarization costs.
+GitHub Releases currently target Linux and Windows. macOS release artifacts are paused until enough user demand justifies Apple signing and notarization costs.
 
 ## Changelog Rules
 

@@ -1,14 +1,120 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
-const CURRENT_CONFIG_VERSION: u8 = 1;
+const CURRENT_CONFIG_VERSION: u8 = 2;
 
 const DEFAULT_FONT_SIZE: u32 = 13;
 const DEFAULT_PANE_OPACITY: f64 = 0.8;
 const DEFAULT_PANE_WIDTH: u32 = 720;
 
+// ----------------------------------------------------------------
+// Shell profile types
+// ----------------------------------------------------------------
+
+/// A named shell configuration that users can select as their default
+/// terminal shell. The profile is a pure data record — all behavior
+/// (spawning, argument handling) is derived from these fields by the
+/// PTY layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProfile {
+    /// Unique identifier (e.g. "bash", "zsh", "pwsh"). Must be non-empty.
+    pub id: String,
+    /// Human-readable label shown in the UI. Falls back to `id` if empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// Absolute path to the shell executable.
+    pub command: String,
+    /// Arguments passed to the shell (e.g. ["-il"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+}
+
+impl ShellProfile {
+    /// Return the display name, falling back to the id.
+    pub fn display_name(&self) -> &str {
+        if self.name.is_empty() { &self.id } else { &self.name }
+    }
+
+    /// Validate and sanitize a raw profile into a canonical form.
+    ///
+    /// - `id` must be non-empty; whitespace is trimmed.
+    /// - `command` must be non-empty; whitespace is trimmed.
+    /// - `name` is optional; whitespace is trimmed.
+    /// - `args` are kept as-is (they are user-specified).
+    ///
+    /// Returns `None` if the profile lacks a usable id or command.
+    pub fn sanitize(candidate: &Value) -> Option<Self> {
+        let obj = candidate.as_object()?;
+
+        let id = obj.get("id").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty())?;
+        let command = obj.get("command").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty())?;
+        let name = obj.get("name").and_then(|v| v.as_str()).map(str::trim).unwrap_or("").to_string();
+        let args = obj
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Some(Self { id: id.to_string(), name, command: command.to_string(), args })
+    }
+}
+
+/// Sanitize a list of shell profiles, deduplicating by id.
+/// Profiles with invalid id or command are silently dropped.
+fn sanitize_shell_profiles(profiles: Option<&Value>) -> Vec<ShellProfile> {
+    let arr = profiles.and_then(|v| v.as_array());
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+
+    if let Some(arr) = arr {
+        for item in arr {
+            if let Some(p) = ShellProfile::sanitize(item) {
+                if seen.insert(p.id.clone()) {
+                    result.push(p);
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Sanitize the `shell` block of a config.
+///
+/// Ensures `defaultProfile` refers to an existing profile. If the
+/// referenced id is missing or the field is absent, falls back to
+/// the first profile's id (or an empty string if no profiles exist).
+fn sanitize_shell_config(
+    shell: Option<&Value>,
+    profiles: &[ShellProfile],
+) -> Value {
+    let raw_default = shell
+        .and_then(|s| s.as_object())
+        .and_then(|o| o.get("defaultProfile"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+
+    let default_id = if !raw_default.is_empty() && profiles.iter().any(|p| p.id == raw_default) {
+        raw_default.to_string()
+    } else {
+        profiles.first().map(|p| p.id.clone()).unwrap_or_default()
+    };
+
+    serde_json::json!({
+        "profiles": profiles,
+        "defaultProfile": default_id,
+    })
+}
+
 /// Resolve the path to `settings.json` inside the app data directory.
-fn settings_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+pub(super) fn settings_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("failed to resolve app data dir: {e}"))
@@ -46,41 +152,69 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
 /// Sanitize an arbitrary config value into the current schema.
 ///
 /// Handles:
-/// - Current versioned format (`{ version: 1, ui: { ... } }`)
+/// - Current versioned format (`{ version: 2, ui: { ... }, shell: { ... } }`)
+/// - Version 1 format (`{ version: 1, ui: { ... } }`) → promoted to v2
 /// - Legacy flat format (`{ fontSize, paneOpacity, paneWidth }` without version/ui)
 /// - Null / invalid input → defaults
-fn sanitize_config(candidate: &Value) -> Value {
-    if let Some(obj) = candidate.as_object() {
-        // Check for current versioned format
-        if obj
-            .get("version")
-            .and_then(|v| v.as_u64())
-            .is_some_and(|v| v == CURRENT_CONFIG_VERSION as u64)
-        {
-            return serde_json::json!({
+pub(super) fn sanitize_config(candidate: &Value) -> Value {
+    let version = candidate
+        .as_object()
+        .and_then(|o| o.get("version"))
+        .and_then(|v| v.as_u64());
+
+    match version {
+        Some(v) if v == 2 => {
+            // Current format: sanitize both blocks.
+            let obj = candidate.as_object().unwrap();
+            let profiles = sanitize_shell_profiles(obj.get("shell").and_then(|s| s.get("profiles")));
+            serde_json::json!({
                 "version": CURRENT_CONFIG_VERSION,
                 "ui": sanitize_ui_config(obj.get("ui")),
-            });
+                "shell": sanitize_shell_config(obj.get("shell"), &profiles),
+            })
         }
-
-        // Legacy flat format: fields at top level, no version/ui nesting
-        if obj.keys().any(|k| ["fontSize", "paneOpacity", "paneWidth"].contains(&k.as_str())) {
-            return serde_json::json!({
+        Some(v) if v == 1 => {
+            // Version 1 → 2 migration: preserve ui, add empty shell block.
+            let obj = candidate.as_object().unwrap();
+            serde_json::json!({
                 "version": CURRENT_CONFIG_VERSION,
-                "ui": sanitize_ui_config(Some(candidate)),
-            });
+                "ui": sanitize_ui_config(obj.get("ui")),
+                "shell": {
+                    "profiles": [],
+                    "defaultProfile": "",
+                },
+            })
+        }
+        _ => {
+            // Check for legacy flat format (fields at top level, no version/ui nesting)
+            if candidate.as_object().is_some_and(|obj| {
+                obj.keys().any(|k| ["fontSize", "paneOpacity", "paneWidth"].contains(&k.as_str()))
+            }) {
+                return serde_json::json!({
+                    "version": CURRENT_CONFIG_VERSION,
+                    "ui": sanitize_ui_config(Some(candidate)),
+                    "shell": {
+                        "profiles": [],
+                        "defaultProfile": "",
+                    },
+                });
+            }
+
+            // Null, non-object, or unrecognized format → defaults
+            serde_json::json!({
+                "version": CURRENT_CONFIG_VERSION,
+                "ui": {
+                    "fontSize": DEFAULT_FONT_SIZE,
+                    "paneOpacity": DEFAULT_PANE_OPACITY,
+                    "paneWidth": DEFAULT_PANE_WIDTH,
+                },
+                "shell": {
+                    "profiles": [],
+                    "defaultProfile": "",
+                },
+            })
         }
     }
-
-    // Null, non-object, or unrecognized format → defaults
-    serde_json::json!({
-        "version": CURRENT_CONFIG_VERSION,
-        "ui": {
-            "fontSize": DEFAULT_FONT_SIZE,
-            "paneOpacity": DEFAULT_PANE_OPACITY,
-            "paneWidth": DEFAULT_PANE_WIDTH,
-        },
-    })
 }
 
 /// Load the application settings from disk.

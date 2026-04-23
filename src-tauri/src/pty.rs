@@ -83,6 +83,9 @@ impl PtyManager {
     /// the Electron behaviour.
     ///
     /// If a session already exists for `pane_id` it is destroyed first.
+    ///
+    /// `shell_profile_id` overrides the default shell resolution: only
+    /// the matching profile (and auto-detected fallbacks) are tried.
     pub fn spawn(
         self: &Arc<Self>,
         app: AppHandle,
@@ -90,6 +93,7 @@ impl PtyManager {
         cols: Option<u16>,
         rows: Option<u16>,
         cwd: Option<&str>,
+        shell_profile_id: Option<&str>,
     ) -> Result<(), String> {
         // Kill any previous session for this pane.
         self.destroy(pane_id);
@@ -112,7 +116,7 @@ impl PtyManager {
         let mut cmd = None;
         let mut last_error = String::new();
 
-        for candidate in shell_candidates(&app) {
+        for candidate in shell_candidates(&app, shell_profile_id) {
             match build_command(&candidate, &cwd) {
                 Ok(c) => {
                     cmd = Some(c);
@@ -306,32 +310,46 @@ impl PtyManager {
 /// Priority:
 /// 1. Default profile from settings (if configured and valid).
 /// 2. Remaining profiles from settings (if any).
-/// 3. Auto-detected platform fallbacks (always appended as safety net).
+/// 3. Auto-detected platform fallbacks including WSL (always appended as safety net).
 ///
-/// On Windows, WSL shells are included in the auto-detected fallbacks.
-fn shell_candidates(app: &AppHandle) -> Vec<ShellCandidate> {
+/// When `shell_profile_id` is `Some(id)`, only the matching profile is
+/// tried (with auto-detected fallbacks as safety net), bypassing the
+/// normal priority order.
+fn shell_candidates(app: &AppHandle, shell_profile_id: Option<&str>) -> Vec<ShellCandidate> {
     let mut candidates: Vec<ShellCandidate> = Vec::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
 
-    // 1–2. Profiles from settings.
     if let Ok(config) = load_settings_config(app) {
         let profiles = extract_profiles(&config);
         let default_id = extract_default_profile(&config);
 
-        // Emit default profile first, then the rest.
-        let ordered: Vec<_> = profiles
-            .iter()
-            .filter(|p| p.id != default_id)
-            .chain(profiles.iter().filter(|p| p.id == default_id))
-            .collect();
+        // If a specific profile is requested, use only that one.
+        if let Some(requested_id) = shell_profile_id {
+            if let Some(profile) = profiles.iter().find(|p| p.id == requested_id) {
+                let path = PathBuf::from(&profile.command);
+                if seen.insert(path.clone()) {
+                    candidates.push(ShellCandidate {
+                        shell: path,
+                        args: profile.args.clone(),
+                    });
+                }
+            }
+        } else {
+            // Normal priority: default profile first, then the rest.
+            let ordered: Vec<_> = profiles
+                .iter()
+                .filter(|p| p.id != default_id)
+                .chain(profiles.iter().filter(|p| p.id == default_id))
+                .collect();
 
-        for profile in ordered.into_iter().rev() {
-            let path = PathBuf::from(&profile.command);
-            if seen.insert(path.clone()) {
-                candidates.push(ShellCandidate {
-                    shell: path,
-                    args: profile.args.clone(),
-                });
+            for profile in ordered.into_iter().rev() {
+                let path = PathBuf::from(&profile.command);
+                if seen.insert(path.clone()) {
+                    candidates.push(ShellCandidate {
+                        shell: path,
+                        args: profile.args.clone(),
+                    });
+                }
             }
         }
     }

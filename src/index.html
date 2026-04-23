@@ -18,27 +18,39 @@
           <button class="tabs-settings" id="tabs-settings" type="button" aria-label="Open settings">&#9881;</button>
         </div>
         <section class="settings-panel is-hidden" id="settings-panel" aria-label="Settings">
-          <label class="settings-row" for="font-size-input">
-            <span>Font size</span>
-          </label>
-          <input class="settings-number" id="font-size-input" type="number" min="10" max="24" step="1" value="13" />
+          <div class="settings-section">
+            <label class="settings-row" for="font-size-input">
+              <span>Font size</span>
+            </label>
+            <input class="settings-number" id="font-size-input" type="number" min="10" max="24" step="1" value="13" />
 
-          <label class="settings-row" for="pane-width-range">
-            <span>Pane width</span>
-            <span id="pane-width-value">720px</span>
-          </label>
-          <div class="settings-dual">
-            <input id="pane-width-range" type="range" min="520" max="1000" step="10" value="720" />
-            <input class="settings-number" id="pane-width-input" type="number" min="520" max="1000" step="10" value="720" />
+            <label class="settings-row" for="pane-width-range">
+              <span>Pane width</span>
+              <span id="pane-width-value">720px</span>
+            </label>
+            <div class="settings-dual">
+              <input id="pane-width-range" type="range" min="520" max="1000" step="10" value="720" />
+              <input class="settings-number" id="pane-width-input" type="number" min="520" max="1000" step="10" value="720" />
+            </div>
+
+            <label class="settings-row" for="pane-opacity-range">
+              <span>Pane opacity</span>
+              <span id="pane-opacity-value">1.00</span>
+            </label>
+            <div class="settings-dual">
+              <input id="pane-opacity-range" type="range" min="0.55" max="1" step="0.01" value="0.8" />
+              <input class="settings-number" id="pane-opacity-input" type="number" min="0.55" max="1" step="0.01" value="0.8" />
+            </div>
           </div>
 
-          <label class="settings-row" for="pane-opacity-range">
-            <span>Pane opacity</span>
-            <span id="pane-opacity-value">1.00</span>
-          </label>
-          <div class="settings-dual">
-            <input id="pane-opacity-range" type="range" min="0.55" max="1" step="0.01" value="0.8" />
-            <input class="settings-number" id="pane-opacity-input" type="number" min="0.55" max="1" step="0.01" value="0.8" />
+          <div class="settings-divider"></div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <span>Shell Profiles</span>
+              <button class="settings-btn" id="shell-profile-add" type="button" title="Add profile">+</button>
+            </div>
+            <div class="shell-profile-list" id="shell-profile-list"></div>
           </div>
         </section>
       </header>

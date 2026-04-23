@@ -30,6 +30,10 @@ function createUnavailableBridge() {
     showContextMenu: fail,
     loadSettings: () => Promise.resolve({}),
     saveSettings: () => Promise.resolve({}),
+    listShellProfiles: () => Promise.resolve({ profiles: [], defaultProfile: '' }),
+    addShellProfile: fail,
+    removeShellProfile: fail,
+    setDefaultShellProfile: fail,
     onTerminalData: () => () => {},
     onTerminalExit: () => () => {},
     onMenuAction: () => () => {},
@@ -75,6 +79,7 @@ function createTauriBridge(tauri) {
         cols: payload.cols,
         rows: payload.rows,
         cwd: payload.cwd,
+        shellProfileId: payload.shellProfileId ?? null,
       }),
     writeTerminal: (payload) =>
       invoke('terminal_write', {
@@ -100,6 +105,10 @@ function createTauriBridge(tauri) {
     showContextMenu: () => {},
     loadSettings: () => invoke('settings_load'),
     saveSettings: (payload) => invoke('settings_save', { settings: payload }),
+    listShellProfiles: () => invoke('shell_profiles_list'),
+    addShellProfile: (profile) => invoke('shell_profile_add', { profile }),
+    removeShellProfile: (profileId) => invoke('shell_profile_remove', { profileId }),
+    setDefaultShellProfile: (profileId) => invoke('shell_profile_set', { profileId }),
     onTerminalData: (handler) => onTauriEvent('vibe99:terminal-data', handler),
     onTerminalExit: (handler) => onTauriEvent('vibe99:terminal-exit', handler),
     onMenuAction: (handler) => onTauriEvent('vibe99:menu-action', handler),
@@ -118,6 +127,7 @@ const initialPanes = [
     terminalTitle: bridge.defaultTabTitle,
     cwd: bridge.defaultCwd,
     accent: '#ff6b57',
+    shellProfileId: null,
   },
   {
     id: 'p2',
@@ -125,6 +135,7 @@ const initialPanes = [
     terminalTitle: bridge.defaultTabTitle,
     cwd: bridge.defaultCwd,
     accent: '#ff9f1c',
+    shellProfileId: null,
   },
   {
     id: 'p3',
@@ -132,6 +143,7 @@ const initialPanes = [
     terminalTitle: bridge.defaultTabTitle,
     cwd: bridge.defaultCwd,
     accent: '#ffd166',
+    shellProfileId: null,
   },
 ];
 
@@ -179,6 +191,13 @@ const settings = {
   paneWidth: 720,
 };
 let pendingSettingsSave = null;
+
+let shellProfiles = [];
+let defaultShellProfileId = '';
+let editingShellProfile = null; // null or { id?, name, command, args }
+
+const shellProfileListEl = document.getElementById('shell-profile-list');
+const shellProfileAddBtn = document.getElementById('shell-profile-add');
 
 const removeTerminalDataListener = bridge.onTerminalData(({ paneId, data }) => {
   const node = paneNodeMap.get(paneId);
@@ -294,6 +313,203 @@ function flushSettingsSave() {
     pendingSettingsSave = null;
     void bridge.saveSettings({ version: 1, ui: settings }).catch(reportError);
   }
+}
+
+// ----------------------------------------------------------------
+// Shell profile management
+// ----------------------------------------------------------------
+
+function loadShellProfiles() {
+  bridge.listShellProfiles().then((config) => {
+    shellProfiles = config.profiles ?? [];
+    defaultShellProfileId = config.defaultProfile ?? '';
+    renderShellProfiles();
+  }).catch(reportError);
+}
+
+function renderShellProfiles() {
+  shellProfileListEl.replaceChildren();
+
+  if (editingShellProfile) {
+    shellProfileListEl.appendChild(createShellProfileEditor());
+    return;
+  }
+
+  if (shellProfiles.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'shell-profile-empty';
+    empty.textContent = 'No profiles configured';
+    shellProfileListEl.appendChild(empty);
+    return;
+  }
+
+  for (const profile of shellProfiles) {
+    const item = document.createElement('div');
+    item.className = `shell-profile-item${profile.id === defaultShellProfileId ? ' is-default' : ''}`;
+
+    const info = document.createElement('div');
+    info.className = 'shell-profile-info';
+
+    const name = document.createElement('div');
+    name.className = 'shell-profile-name';
+    name.textContent = profile.name || profile.id;
+
+    const cmd = document.createElement('div');
+    cmd.className = 'shell-profile-cmd';
+    cmd.textContent = profile.command + (profile.args?.length ? ` ${profile.args.join(' ')}` : '');
+
+    info.append(name, cmd);
+
+    const actions = document.createElement('div');
+    actions.className = 'shell-profile-actions';
+
+    if (profile.id !== defaultShellProfileId) {
+      actions.appendChild(createProfileActionButton('★', 'Set as default', () => {
+        bridge.setDefaultShellProfile(profile.id).then((config) => {
+          shellProfiles = config.profiles ?? [];
+          defaultShellProfileId = config.defaultProfile ?? '';
+          renderShellProfiles();
+        }).catch(reportError);
+      }));
+    }
+
+    actions.appendChild(createProfileActionButton('✎', 'Edit', () => {
+      editingShellProfile = {
+        id: profile.id,
+        name: profile.name || '',
+        command: profile.command,
+        args: (profile.args ?? []).join(' '),
+      };
+      renderShellProfiles();
+    }));
+
+    actions.appendChild(createProfileActionButton('✕', 'Delete', () => {
+      bridge.removeShellProfile(profile.id).then((config) => {
+        shellProfiles = config.profiles ?? [];
+        defaultShellProfileId = config.defaultProfile ?? '';
+        renderShellProfiles();
+      }).catch(reportError);
+    }));
+
+    item.append(info, actions);
+    shellProfileListEl.appendChild(item);
+  }
+}
+
+function createProfileActionButton(label, title, onClick) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'settings-btn';
+  btn.textContent = label;
+  btn.title = title;
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onClick();
+  });
+  return btn;
+}
+
+function createShellProfileEditor() {
+  const editor = document.createElement('div');
+  editor.className = 'shell-profile-editor';
+
+  const fields = [
+    { key: 'name', label: 'Name (optional)', placeholder: 'e.g. Zsh' },
+    { key: 'id', label: 'ID', placeholder: 'e.g. zsh' },
+    { key: 'command', label: 'Command', placeholder: '/bin/zsh' },
+    { key: 'args', label: 'Arguments', placeholder: '-il' },
+  ];
+
+  const inputs = {};
+  for (const field of fields) {
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    label.setAttribute('for', `shell-edit-${field.key}`);
+
+    const input = document.createElement('input');
+    input.id = `shell-edit-${field.key}`;
+    input.type = 'text';
+    input.value = editingShellProfile[field.key] ?? '';
+    input.placeholder = field.placeholder;
+    input.dataset.field = field.key;
+    inputs[field.key] = input;
+
+    // Auto-fill id from name when creating new profile
+    if (field.key === 'name' && !editingShellProfile.id) {
+      input.addEventListener('input', () => {
+        const idInput = inputs.id;
+        if (!idInput.value && input.value.trim()) {
+          idInput.value = input.value.trim().toLowerCase().replace(/\s+/g, '-');
+        }
+      });
+    }
+
+    editor.append(label, input);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'shell-profile-editor-actions';
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'settings-btn';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => {
+    editingShellProfile = null;
+    renderShellProfiles();
+  });
+
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'settings-btn is-primary';
+  save.textContent = 'Save';
+  save.addEventListener('click', () => {
+    const profile = {
+      id: inputs.id.value.trim(),
+      name: inputs.name.value.trim(),
+      command: inputs.command.value.trim(),
+      args: inputs.args.value.trim().split(/\s+/).filter(Boolean),
+    };
+
+    if (!profile.id || !profile.command) {
+      reportError(new Error('ID and Command are required'));
+      return;
+    }
+
+    bridge.addShellProfile(profile).then((config) => {
+      shellProfiles = config.profiles ?? [];
+      defaultShellProfileId = config.defaultProfile ?? '';
+      editingShellProfile = null;
+      renderShellProfiles();
+    }).catch(reportError);
+  });
+
+  actions.append(cancel, save);
+  editor.appendChild(actions);
+
+  queueMicrotask(() => {
+    const firstInput = editor.querySelector('input');
+    if (firstInput) {
+      firstInput.focus();
+      firstInput.select();
+    }
+  });
+
+  return editor;
+}
+
+function changePaneShell(paneId, profileId) {
+  const node = paneNodeMap.get(paneId);
+  if (!node) return;
+
+  panes = panes.map((p) =>
+    p.id === paneId ? { ...p, shellProfileId: profileId } : p
+  );
+
+  bridge.destroyTerminal({ paneId });
+  node.sessionReady = false;
+  node.terminal.clear();
+  initializePaneTerminal(node);
 }
 
 function createTerminalTheme(accent) {
@@ -565,11 +781,13 @@ function fitTerminal(node, force = false) {
 
 async function initializePaneTerminal(node) {
   fitTerminal(node, true);
+  const pane = panes.find((p) => p.id === node.paneId);
   await bridge.createTerminal({
     paneId: node.paneId,
     cols: node.terminal.cols,
     rows: node.terminal.rows,
     cwd: node.cwd,
+    shellProfileId: pane?.shellProfileId ?? null,
   });
   node.sessionReady = true;
   fitTerminal(node, true);
@@ -608,6 +826,7 @@ function createPaneData() {
     terminalTitle: bridge.defaultTabTitle,
     cwd: focusedPane?.cwd || bridge.defaultCwd,
     accent,
+    shellProfileId: null,
   };
 
   nextPaneNumber += 1;
@@ -1009,6 +1228,41 @@ function showContextMenu(items, x, y, paneId) {
       handleMenuAction(item.action, paneId);
     });
 
+    if (item.children?.length) {
+      row.disabled = true;
+      const submenu = document.createElement('div');
+      submenu.className = 'context-menu-submenu';
+      submenu.setAttribute('role', 'menu');
+      for (const child of item.children) {
+        const childRow = document.createElement('button');
+        childRow.type = 'button';
+        childRow.className = 'context-menu-item';
+        childRow.setAttribute('role', 'menuitem');
+        childRow.disabled = child.disabled || false;
+
+        const childLabel = document.createElement('span');
+        childLabel.className = 'context-menu-label';
+        childLabel.textContent = child.label;
+        childRow.appendChild(childLabel);
+
+        if (child.isDefault) {
+          const check = document.createElement('span');
+          check.className = 'context-menu-shortcut';
+          check.textContent = '★';
+          childRow.appendChild(check);
+        }
+
+        childRow.addEventListener('click', (e) => {
+          e.stopPropagation();
+          hideContextMenu();
+          handleMenuAction(child.action, paneId);
+        });
+
+        submenu.appendChild(childRow);
+      }
+      row.appendChild(submenu);
+    }
+
     menu.appendChild(row);
   }
 
@@ -1052,6 +1306,13 @@ function dismissContextMenuOnOutside(event) {
 
 function showTerminalContextMenu(node, event) {
   const clipboardSnapshot = getClipboardSnapshot();
+
+  const shellChildren = shellProfiles.map((p) => ({
+    label: p.name || p.id,
+    action: `terminal-change-shell:${p.id}`,
+    isDefault: p.id === defaultShellProfileId,
+  }));
+
   const items = [
     { label: 'Copy', action: 'terminal-copy', disabled: !node.terminal.hasSelection(), shortcut: '⇧⌘C' },
     { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text, shortcut: '⇧⌘V' },
@@ -1059,6 +1320,14 @@ function showTerminalContextMenu(node, event) {
     { type: 'separator' },
     { label: 'Select All', action: 'terminal-select-all', shortcut: '⌘A' },
   ];
+
+  if (shellChildren.length > 0) {
+    items.push(
+      { type: 'separator' },
+      { label: 'Change Shell', disabled: true, children: shellChildren },
+    );
+  }
+
   showContextMenu(items, event.clientX, event.clientY, node.paneId);
 }
 
@@ -1127,6 +1396,12 @@ function handleMenuAction(action, paneId) {
     if (paneIndex !== -1) {
       closePane(paneIndex);
     }
+    return;
+  }
+
+  if (action.startsWith('terminal-change-shell:')) {
+    const profileId = action.slice('terminal-change-shell:'.length);
+    changePaneShell(paneId, profileId);
   }
 }
 
@@ -1247,11 +1522,20 @@ addPaneButtonEl.addEventListener('click', () => {
 
 settingsButtonEl.addEventListener('click', (event) => {
   event.stopPropagation();
-  settingsPanelEl.classList.toggle('is-hidden');
+  const wasHidden = settingsPanelEl.classList.toggle('is-hidden');
+  if (wasHidden) {
+    editingShellProfile = null;
+    loadShellProfiles();
+  }
 });
 
 settingsPanelEl.addEventListener('click', (event) => {
   event.stopPropagation();
+});
+
+shellProfileAddBtn.addEventListener('click', () => {
+  editingShellProfile = { id: '', name: '', command: '', args: '' };
+  renderShellProfiles();
 });
 
 fontSizeInputEl.addEventListener('change', () => {
@@ -1342,6 +1626,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     );
     applyPersistedSettings(await bridge.loadSettings());
     applySettings();
+    loadShellProfiles();
     render(true);
   } catch (error) {
     reportError(error);

@@ -30,8 +30,9 @@ pub fn terminal_create(
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
+    shell_profile_id: Option<String>,
 ) -> Result<(), String> {
-    state.pty.spawn(app, &pane_id, cols, rows, cwd.as_deref())
+    state.pty.spawn(app, &pane_id, cols, rows, cwd.as_deref(), shell_profile_id.as_deref())
 }
 
 /// Write raw bytes to the PTY for the given pane.

@@ -14,85 +14,81 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
-      - name: Install Linux packaging tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg fakeroot
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
         run: npm ci
 
       - name: Verify tag matches package version
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
-          node -e "const pkg=require('./package.json'); const tag=(process.env.GITHUB_REF_NAME || '').replace(/^v/, ''); if (pkg.version !== tag) { console.error(`Tag ${process.env.GITHUB_REF_NAME} does not match package.json version ${pkg.version}`); process.exit(1); }"
+          node -e "const pkg=require('./package.json'); const tag=(process.env.GITHUB_REF_NAME || '').replace(/^v/, ''); if (pkg.version !== tag) { console.error('Tag ' + process.env.GITHUB_REF_NAME + ' does not match package.json version ' + pkg.version); process.exit(1); }"
 
-      - name: Build Linux release artifacts
-        run: npm run make
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: release-linux
-          path: |
-            out/make/AppImage/**/*.AppImage
-            out/make/deb/**/*.deb
-            out/make/zip/linux/**/*.zip
-          if-no-files-found: error
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Vibe99 ${{ github.ref_name }}'
+          releaseBody: ''
+          releaseDraft: true
+          prerelease: false
 
   build-windows:
     runs-on: windows-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
         run: npm ci
 
-      - name: Verify tag matches package version
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: |
-          node -e "const pkg=require('./package.json'); const tag=(process.env.GITHUB_REF_NAME || '').replace(/^v/, ''); if (pkg.version !== tag) { console.error(`Tag ${process.env.GITHUB_REF_NAME} does not match package.json version ${pkg.version}`); process.exit(1); }"
-
-      - name: Verify Windows npm run path
-        shell: pwsh
-        run: |
-          npm run capture
-          $capture = Join-Path $env:TEMP 'vibe99-prototype.png'
-          if (-not (Test-Path -LiteralPath $capture)) {
-            throw "Expected capture output at $capture"
-          }
-
-      - name: Build Windows release artifacts
-        run: npm run make
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: release-windows
-          path: |
-            out/builder/Vibe99-*-windows-portable-*.exe
-            out/builder/Vibe99-*-windows-*.zip
-          if-no-files-found: error
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Vibe99 ${{ github.ref_name }}'
+          releaseBody: ''
+          releaseDraft: true
+          prerelease: false
 
   publish-release:
     runs-on: ubuntu-latest
@@ -102,33 +98,23 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
 
       - name: Extract release notes
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: node ./scripts/extract-release-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
 
-      - name: Create GitHub release
+      - name: Append release notes to draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
-          mapfile -t assets < <(find release-assets -type f | sort)
-          gh release create "$GITHUB_REF_NAME" \
-            "${assets[@]}" \
-            --title "Vibe99 $GITHUB_REF_NAME" \
-            --notes-file release-notes.md \
-            --verify-tag
+          gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md

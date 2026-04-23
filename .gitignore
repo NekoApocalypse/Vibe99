@@ -8,3 +8,4 @@ dist/
 out/
 .DS_Store
 spec/
+src-tauri/target/

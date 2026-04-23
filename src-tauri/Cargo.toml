@@ -1,0 +1,28 @@
+[package]
+name = "vibe99"
+version = "0.4.5"
+description = "Vibe99 terminal workspace"
+authors = [""]
+edition = "2021"
+
+[lib]
+name = "vibe99_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [
+  "devtools",
+  "image-png",
+  "tray-icon",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.8"
+base64 = "0.22"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"

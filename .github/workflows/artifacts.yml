@@ -12,31 +12,40 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Install Linux packaging tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg fakeroot
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Linux artifacts
-        run: npm run make
+      - name: Build Tauri app
+        run: npx tauri build
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: prerelease-linux
           path: |
-            out/make/AppImage/**/*.AppImage
-            out/make/deb/**/*.deb
-            out/make/zip/linux/**/*.zip
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
 
   build-windows:
@@ -44,34 +53,33 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
         run: npm ci
 
-      - name: Verify Windows npm run path
-        shell: pwsh
-        run: |
-          npm run capture
-          $capture = Join-Path $env:TEMP 'vibe99-prototype.png'
-          if (-not (Test-Path -LiteralPath $capture)) {
-            throw "Expected capture output at $capture"
-          }
-
-      - name: Build Windows artifacts
-        run: npm run make
+      - name: Build Tauri app
+        run: npx tauri build
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: prerelease-windows
           path: |
-            out/builder/Vibe99-*-windows-portable-*.exe
-            out/builder/Vibe99-*-windows-*.zip
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error

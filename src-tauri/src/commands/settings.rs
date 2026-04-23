@@ -156,7 +156,7 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
 /// - Version 1 format (`{ version: 1, ui: { ... } }`) → promoted to v2
 /// - Legacy flat format (`{ fontSize, paneOpacity, paneWidth }` without version/ui)
 /// - Null / invalid input → defaults
-pub(super) fn sanitize_config(candidate: &Value) -> Value {
+pub(crate) fn sanitize_config(candidate: &Value) -> Value {
     let version = candidate
         .as_object()
         .and_then(|o| o.get("version"))

@@ -1,10 +1,10 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Minimum column count for a PTY session.
 const MIN_COLS: u16 = 20;
@@ -110,7 +110,7 @@ impl PtyManager {
         let mut cmd = None;
         let mut last_error = String::new();
 
-        for candidate in shell_candidates() {
+        for candidate in shell_candidates(&app) {
             match build_command(&candidate, &cwd) {
                 Ok(c) => {
                     cmd = Some(c);
@@ -296,12 +296,101 @@ impl PtyManager {
 }
 
 // ----------------------------------------------------------------
-// Shell detection
+// Shell resolution
 // ----------------------------------------------------------------
 
-/// Return the ordered list of shell candidates, mirroring the fallback
-/// chain in `electron/main.js` → `getShellLaunchConfigs()`.
-fn shell_candidates() -> Vec<ShellCandidate> {
+/// Return the ordered list of shell candidates for spawning a PTY.
+///
+/// Priority:
+/// 1. Default profile from settings (if configured and valid).
+/// 2. Remaining profiles from settings (if any).
+/// 3. Auto-detected platform fallbacks (always appended as safety net).
+fn shell_candidates(app: &AppHandle) -> Vec<ShellCandidate> {
+    let mut candidates: Vec<ShellCandidate> = Vec::new();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+
+    // 1–2. Profiles from settings.
+    if let Ok(config) = load_settings_config(app) {
+        let profiles = extract_profiles(&config);
+        let default_id = extract_default_profile(&config);
+
+        // Emit default profile first, then the rest.
+        let ordered: Vec<_> = profiles
+            .iter()
+            .filter(|p| p.id != default_id)
+            .chain(profiles.iter().filter(|p| p.id == default_id))
+            .collect();
+
+        for profile in ordered.into_iter().rev() {
+            let path = PathBuf::from(&profile.command);
+            if seen.insert(path.clone()) {
+                candidates.push(ShellCandidate {
+                    shell: path,
+                    args: profile.args.clone(),
+                });
+            }
+        }
+    }
+
+    // 3. Auto-detected fallbacks (deduplicated against settings profiles).
+    for candidate in auto_detected_candidates() {
+        if seen.insert(candidate.shell.clone()) {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates
+}
+
+/// Load and sanitize settings from disk.
+fn load_settings_config(app: &AppHandle) -> Result<serde_json::Value, String> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("failed to resolve app data dir: {e}"))?
+        .join("settings.json");
+
+    if !path.exists() {
+        return Err("no settings file".into());
+    }
+
+    let contents =
+        std::fs::read_to_string(&path).map_err(|e| format!("failed to read settings: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&contents).unwrap_or(serde_json::Value::Null);
+
+    // Reuse the same sanitization as the settings command layer.
+    Ok(vibe99_lib::commands::settings::sanitize_config(&parsed))
+}
+
+/// Extract shell profiles from a sanitized config value.
+fn extract_profiles(config: &serde_json::Value) -> Vec<crate::commands::settings::ShellProfile> {
+    config
+        .get("shell")
+        .and_then(|s| s.get("profiles"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// Extract the default profile id from a sanitized config value.
+fn extract_default_profile(config: &serde_json::Value) -> String {
+    config
+        .get("shell")
+        .and_then(|s| s.get("defaultProfile"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+// ----------------------------------------------------------------
+// Auto-detection fallback
+// ----------------------------------------------------------------
+
+/// Return platform-specific shell candidates via environment inspection.
+///
+/// This is the fallback chain used when no profiles are configured in
+/// settings, or when all configured profiles fail to resolve.
+fn auto_detected_candidates() -> Vec<ShellCandidate> {
     let mut candidates: Vec<ShellCandidate> = Vec::new();
 
     if cfg!(target_os = "windows") {
@@ -332,7 +421,7 @@ fn shell_candidates() -> Vec<ShellCandidate> {
     } else {
         // Unix (Linux / macOS): $SHELL first (only if absolute), then
         // platform-specific fallbacks, deduplicated.
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
 
         if let Ok(shell) = std::env::var("SHELL") {
             let p = PathBuf::from(&shell);

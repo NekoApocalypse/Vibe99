@@ -2,6 +2,29 @@ use super::settings::{sanitize_config, settings_path, ShellProfile};
 use serde_json::Value;
 use tauri::AppHandle;
 
+/// Friendly names for common shell executables.
+fn friendly_label(shell: &str) -> (String, String) {
+    let lower = shell.to_lowercase();
+    let stem = std::path::Path::new(&lower)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let label = match stem.as_str() {
+        "powershell" => "Windows PowerShell",
+        "pwsh" => "PowerShell",
+        "cmd" => "Command Prompt",
+        "wsl" => "WSL",
+        "bash" => "Bash",
+        "zsh" => "Zsh",
+        "sh" => "Sh",
+        "fish" => "Fish",
+        other => other,
+    };
+
+    (stem.to_string(), label.to_string())
+}
+
 /// Result type for commands that return the full shell block.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -195,4 +218,40 @@ pub fn shell_profile_remove(app: AppHandle, profile_id: String) -> Result<ShellC
         profiles: extract_profiles(&sanitized),
         default_profile: extract_default_profile(&sanitized),
     })
+}
+
+/// Detect available shells on the system and return them as profiles.
+///
+/// These are shells found via environment probes (e.g. PowerShell, WSL)
+/// that are not necessarily in the user's settings. The frontend can
+/// merge them into the profile list so users can see and select them.
+#[tauri::command]
+pub fn shell_profiles_detect() -> Vec<ShellProfile> {
+    let candidates = crate::pty::auto_detected_candidates();
+    let mut profiles = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for candidate in candidates {
+        let shell_str = candidate.shell.to_string_lossy().to_string();
+
+        let (id, name) = if let Some(ref display) = candidate.display_name {
+            (crate::pty::display_name_to_id(display), display.clone())
+        } else {
+            friendly_label(&shell_str)
+        };
+
+        // Deduplicate by id (e.g. ComSpec may resolve to the same cmd.exe).
+        if !seen_ids.insert(id.clone()) {
+            continue;
+        }
+
+        profiles.push(ShellProfile {
+            id,
+            name,
+            command: shell_str,
+            args: candidate.args,
+        });
+    }
+
+    profiles
 }

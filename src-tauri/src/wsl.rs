@@ -20,7 +20,7 @@
 //!   meaningful in WSL are forwarded, preventing Windows-specific noise from
 //!   polluting the Linux environment (P11: functional self-discipline).
 
-use std::path::Path;
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 
 // ----------------------------------------------------------------
@@ -66,11 +66,13 @@ pub fn list_distributions() -> Vec<String> {
             .output();
 
         match output {
-            Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .map(|line| line.trim().replace('\0', ""))
-                .filter(|s| !s.is_empty())
-                .collect(),
+            Ok(out) if out.status.success() => {
+                let text = decode_utf16le(&out.stdout);
+                text.lines()
+                    .map(|line| line.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            }
             _ => Vec::new(),
         }
     }
@@ -78,6 +80,24 @@ pub fn list_distributions() -> Vec<String> {
     {
         Vec::new()
     }
+}
+
+/// Decode UTF-16LE bytes (as emitted by `wsl.exe --list --quiet`) to a Rust
+/// string. Strips a leading BOM (`FF FE`) if present.
+#[cfg(target_os = "windows")]
+fn decode_utf16le(bytes: &[u8]) -> String {
+    let bytes = if bytes.starts_with(&[0xFF, 0xFE]) {
+        &bytes[2..]
+    } else {
+        bytes
+    };
+    bytes
+        .chunks_exact(2)
+        .filter_map(|chunk| {
+            let code_unit = u16::from_le_bytes([chunk[0], chunk[1]]);
+            char::from_u32(code_unit as u32)
+        })
+        .collect()
 }
 
 // ----------------------------------------------------------------

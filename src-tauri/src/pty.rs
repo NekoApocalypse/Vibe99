@@ -21,9 +21,23 @@ const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
 
 /// A shell candidate for the fallback chain.
-struct ShellCandidate {
-    shell: PathBuf,
-    args: Vec<String>,
+pub struct ShellCandidate {
+    pub shell: PathBuf,
+    pub args: Vec<String>,
+    /// Optional display override used to derive unique profile id and name.
+    pub display_name: Option<String>,
+}
+
+/// Derive a slug-style id from a display name.
+///
+/// `"WSL (Ubuntu)"` → `"wsl-ubuntu"`, `"PowerShell"` → `"powershell"`.
+/// Non-alphanumeric runs become a single `-`; leading/trailing dashes are stripped.
+pub fn display_name_to_id(name: &str) -> String {
+    use regex::Regex;
+    let re = Regex::new(r"[^a-z0-9]+").unwrap();
+    re.replace_all(&name.to_lowercase(), "-")
+        .trim_matches('-')
+        .to_string()
 }
 
 /// Payload emitted on `vibe99:terminal-data`.
@@ -317,7 +331,7 @@ impl PtyManager {
 /// normal priority order.
 fn shell_candidates(app: &AppHandle, shell_profile_id: Option<&str>) -> Vec<ShellCandidate> {
     let mut candidates: Vec<ShellCandidate> = Vec::new();
-    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut seen: HashSet<(PathBuf, Option<String>)> = HashSet::new();
 
     if let Ok(config) = load_settings_config(app) {
         let profiles = extract_profiles(&config);
@@ -327,10 +341,11 @@ fn shell_candidates(app: &AppHandle, shell_profile_id: Option<&str>) -> Vec<Shel
         if let Some(requested_id) = shell_profile_id {
             if let Some(profile) = profiles.iter().find(|p| p.id == requested_id) {
                 let path = PathBuf::from(&profile.command);
-                if seen.insert(path.clone()) {
+                if seen.insert((path.clone(), None)) {
                     candidates.push(ShellCandidate {
                         shell: path,
                         args: profile.args.clone(),
+                        display_name: None,
                     });
                 }
             }
@@ -344,19 +359,55 @@ fn shell_candidates(app: &AppHandle, shell_profile_id: Option<&str>) -> Vec<Shel
 
             for profile in ordered.into_iter().rev() {
                 let path = PathBuf::from(&profile.command);
-                if seen.insert(path.clone()) {
+                if seen.insert((path.clone(), None)) {
                     candidates.push(ShellCandidate {
                         shell: path,
                         args: profile.args.clone(),
+                        display_name: None,
                     });
                 }
             }
         }
     }
 
-    // 3. Auto-detected fallbacks (deduplicated against settings profiles).
-    for candidate in auto_detected_candidates() {
-        if seen.insert(candidate.shell.clone()) {
+    // Auto-detected fallbacks.
+    let detected = auto_detected_candidates();
+
+    // If a specific profile was requested but not found in settings,
+    // try to match it against auto-detected candidates by id.
+    if let Some(requested_id) = shell_profile_id {
+        if candidates.is_empty() {
+            let requested_lower = requested_id.to_lowercase();
+            for candidate in &detected {
+                // Match by display_name-derived id first, then by shell stem.
+                let derived_id = candidate
+                    .display_name
+                    .as_ref()
+                    .map(|d| display_name_to_id(d));
+                let matches_display = derived_id.as_deref() == Some(&requested_lower);
+                let stem = candidate
+                    .shell
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+                    .to_lowercase();
+                if matches_display || stem == requested_lower {
+                    if seen.insert((candidate.shell.clone(), candidate.display_name.clone())) {
+                        candidates.push(ShellCandidate {
+                            shell: candidate.shell.clone(),
+                            args: candidate.args.clone(),
+                            display_name: candidate.display_name.clone(),
+                        });
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Append remaining auto-detected fallbacks (deduplicated).
+    for candidate in detected {
+        if seen.insert((candidate.shell.clone(), candidate.display_name.clone())) {
             candidates.push(candidate);
         }
     }
@@ -382,7 +433,7 @@ fn load_settings_config(app: &AppHandle) -> Result<serde_json::Value, String> {
         serde_json::from_str(&contents).unwrap_or(serde_json::Value::Null);
 
     // Reuse the same sanitization as the settings command layer.
-    Ok(vibe99_lib::commands::settings::sanitize_config(&parsed))
+    Ok(crate::commands::settings::sanitize_config(&parsed))
 }
 
 /// Extract shell profiles from a sanitized config value.
@@ -413,7 +464,7 @@ fn extract_default_profile(config: &serde_json::Value) -> String {
 /// This is the fallback chain used when no profiles are configured in
 /// settings, or when all configured profiles fail to resolve.
 /// On Windows, WSL shells are offered after native Windows shells.
-fn auto_detected_candidates() -> Vec<ShellCandidate> {
+pub fn auto_detected_candidates() -> Vec<ShellCandidate> {
     let mut candidates: Vec<ShellCandidate> = Vec::new();
 
     if cfg!(target_os = "windows") {
@@ -428,6 +479,7 @@ fn auto_detected_candidates() -> Vec<ShellCandidate> {
                     candidates.push(ShellCandidate {
                         shell: PathBuf::from(&custom),
                         args: vec![],
+                        display_name: None,
                     });
                 }
             }
@@ -436,6 +488,7 @@ fn auto_detected_candidates() -> Vec<ShellCandidate> {
             candidates.push(ShellCandidate {
                 shell: PathBuf::from(shell),
                 args: vec![],
+                display_name: None,
             });
         }
         if let Ok(comspec) = std::env::var("ComSpec") {
@@ -443,6 +496,7 @@ fn auto_detected_candidates() -> Vec<ShellCandidate> {
                 candidates.push(ShellCandidate {
                     shell: PathBuf::from(&comspec),
                     args: vec![],
+                    display_name: None,
                 });
             }
         }
@@ -459,6 +513,7 @@ fn auto_detected_candidates() -> Vec<ShellCandidate> {
                 candidates.push(ShellCandidate {
                     shell: p,
                     args: vec!["-il".into()],
+                    display_name: None,
                 });
             }
         }
@@ -475,6 +530,7 @@ fn auto_detected_candidates() -> Vec<ShellCandidate> {
                 candidates.push(ShellCandidate {
                     shell: p,
                     args: vec!["-il".into()],
+                    display_name: None,
                 });
             }
         }
@@ -483,7 +539,7 @@ fn auto_detected_candidates() -> Vec<ShellCandidate> {
     candidates
 }
 
-/// Append WSL shell candidates to the list.
+/// Append WSL shell candidates to the list — one per detected distribution.
 ///
 /// On non-Windows or when WSL is not available this is a no-op.
 /// `distro_override` allows forcing a specific distribution (used by
@@ -494,15 +550,27 @@ fn push_wsl_candidates(candidates: &mut Vec<ShellCandidate>, distro_override: Op
         return;
     }
 
-    // Detect the default shell inside WSL.
     let default_shell = wsl::detect_wsl_default_shell().unwrap_or_else(|| "/bin/bash".into());
 
-    let args = wsl::wsl_shell_args(distro_override, &default_shell, &["-il".into()]);
+    if let Some(distro) = distro_override {
+        let args = wsl::wsl_shell_args(Some(distro), &default_shell, &["-il".into()]);
+        candidates.push(ShellCandidate {
+            shell: PathBuf::from("wsl.exe"),
+            args,
+            display_name: Some(format!("WSL ({})", distro)),
+        });
+        return;
+    }
 
-    candidates.push(ShellCandidate {
-        shell: PathBuf::from("wsl.exe"),
-        args,
-    });
+    let distros = wsl::list_distributions();
+    for distro in &distros {
+        let args = wsl::wsl_shell_args(Some(distro), &default_shell, &["-il".into()]);
+        candidates.push(ShellCandidate {
+            shell: PathBuf::from("wsl.exe"),
+            args,
+            display_name: Some(format!("WSL ({})", distro)),
+        });
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -544,14 +612,22 @@ fn build_command(candidate: &ShellCandidate, cwd: &Path) -> Result<CommandBuilde
         return Ok(cmd);
     }
 
-    if !candidate.shell.exists() {
-        return Err(format!("shell not found: {:?}", candidate.shell));
-    }
-    if !is_executable(&candidate.shell) {
-        return Err(format!("shell not executable: {:?}", candidate.shell));
+    // Resolve bare names (e.g. "powershell.exe") via PATH lookup.
+    let shell_path = if candidate.shell.is_absolute() {
+        if !candidate.shell.exists() {
+            return Err(format!("shell not found: {:?}", candidate.shell));
+        }
+        candidate.shell.clone()
+    } else {
+        which(&candidate.shell.to_string_lossy())
+            .ok_or_else(|| format!("shell not found on PATH: {:?}", candidate.shell))?
+    };
+
+    if !is_executable(&shell_path) {
+        return Err(format!("shell not executable: {:?}", shell_path));
     }
 
-    let mut cmd = CommandBuilder::new(&candidate.shell);
+    let mut cmd = CommandBuilder::new(&shell_path);
     cmd.args(&candidate.args);
     cmd.cwd(cwd);
     Ok(cmd)

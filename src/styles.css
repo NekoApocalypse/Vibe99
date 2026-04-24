@@ -322,10 +322,17 @@ body {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.shell-profile-item.is-detected .shell-profile-name::after {
+  content: ' (auto)';
+  color: var(--panel-muted);
+  font-size: 11px;
+}
+
 .shell-profile-info {
   display: grid;
   gap: 0;
   min-width: 0;
+  cursor: pointer;
 }
 
 .shell-profile-name {
@@ -590,7 +597,18 @@ body.is-dragging-tabs {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.context-menu-parent {
+  position: relative;
+}
+
+.context-menu-parent::after {
+  content: '›';
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .context-menu-submenu {
+  display: none;
   position: absolute;
   left: 100%;
   top: -4px;
@@ -600,4 +618,8 @@ body.is-dragging-tabs {
   border-radius: 6px;
   background: #1e1e1e;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+.context-menu-parent:hover > .context-menu-submenu {
+  display: block;
 }

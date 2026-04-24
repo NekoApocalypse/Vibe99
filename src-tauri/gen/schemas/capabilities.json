@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Capability for the main window","local":true,"windows":["main"],"permissions":["core:default","clipboard-manager:default","fs:default","shell:default","dialog:default"]}}
+{"default":{"identifier":"default","description":"Capability for the main window","local":true,"windows":["main"],"permissions":["core:default","clipboard-manager:default","clipboard-manager:allow-read-text","clipboard-manager:allow-write-text","fs:default","shell:default","dialog:default"]}}

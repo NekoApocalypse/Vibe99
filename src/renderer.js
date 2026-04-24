@@ -34,6 +34,7 @@ function createUnavailableBridge() {
     addShellProfile: fail,
     removeShellProfile: fail,
     setDefaultShellProfile: fail,
+    detectShellProfiles: () => Promise.resolve([]),
     onTerminalData: () => () => {},
     onTerminalExit: () => () => {},
     onMenuAction: () => () => {},
@@ -109,6 +110,7 @@ function createTauriBridge(tauri) {
     addShellProfile: (profile) => invoke('shell_profile_add', { profile }),
     removeShellProfile: (profileId) => invoke('shell_profile_remove', { profileId }),
     setDefaultShellProfile: (profileId) => invoke('shell_profile_set', { profileId }),
+    detectShellProfiles: () => invoke('shell_profiles_detect'),
     onTerminalData: (handler) => onTauriEvent('vibe99:terminal-data', handler),
     onTerminalExit: (handler) => onTauriEvent('vibe99:terminal-exit', handler),
     onMenuAction: (handler) => onTauriEvent('vibe99:menu-action', handler),
@@ -209,6 +211,11 @@ const removeTerminalDataListener = bridge.onTerminalData(({ paneId, data }) => {
 const removeTerminalExitListener = bridge.onTerminalExit(({ paneId, exitCode }) => {
   const node = paneNodeMap.get(paneId);
   if (!node) {
+    return;
+  }
+
+  // If the terminal was destroyed for a shell change, don't close the pane.
+  if (node._shellChanging) {
     return;
   }
 
@@ -319,9 +326,18 @@ function flushSettingsSave() {
 // Shell profile management
 // ----------------------------------------------------------------
 
+let detectedShellProfiles = [];
+
 function loadShellProfiles() {
-  bridge.listShellProfiles().then((config) => {
-    shellProfiles = config.profiles ?? [];
+  Promise.all([
+    bridge.listShellProfiles(),
+    bridge.detectShellProfiles().catch(() => []),
+  ]).then(([config, detected]) => {
+    detectedShellProfiles = detected;
+    const userProfiles = config.profiles ?? [];
+    const userIds = new Set(userProfiles.map((p) => p.id));
+    // Merge: user profiles first, then detected ones not already present.
+    shellProfiles = [...userProfiles, ...detected.filter((p) => !userIds.has(p.id))];
     defaultShellProfileId = config.defaultProfile ?? '';
     renderShellProfiles();
   }).catch(reportError);
@@ -343,9 +359,12 @@ function renderShellProfiles() {
     return;
   }
 
+  const detectedIds = new Set(detectedShellProfiles.map((p) => p.id));
+
   for (const profile of shellProfiles) {
+    const isDetected = detectedIds.has(profile.id);
     const item = document.createElement('div');
-    item.className = `shell-profile-item${profile.id === defaultShellProfileId ? ' is-default' : ''}`;
+    item.className = `shell-profile-item${profile.id === defaultShellProfileId ? ' is-default' : ''}${isDetected ? ' is-detected' : ''}`;
 
     const info = document.createElement('div');
     info.className = 'shell-profile-info';
@@ -360,16 +379,31 @@ function renderShellProfiles() {
 
     info.append(name, cmd);
 
+    // Click the profile info area to apply this shell to the focused pane.
+    info.addEventListener('click', () => {
+      if (focusedPaneId) {
+        changePaneShell(focusedPaneId, profile.id);
+      }
+    });
+
     const actions = document.createElement('div');
     actions.className = 'shell-profile-actions';
 
     if (profile.id !== defaultShellProfileId) {
       actions.appendChild(createProfileActionButton('★', 'Set as default', () => {
-        bridge.setDefaultShellProfile(profile.id).then((config) => {
-          shellProfiles = config.profiles ?? [];
+        const apply = (config) => {
+          const userIds = new Set((config.profiles ?? []).map((p) => p.id));
+          shellProfiles = [...(config.profiles ?? []), ...detectedShellProfiles.filter((p) => !userIds.has(p.id))];
           defaultShellProfileId = config.defaultProfile ?? '';
           renderShellProfiles();
-        }).catch(reportError);
+        };
+        if (isDetected) {
+          bridge.addShellProfile(profile).then(() => {
+            bridge.setDefaultShellProfile(profile.id).then(apply).catch(reportError);
+          }).catch(reportError);
+        } else {
+          bridge.setDefaultShellProfile(profile.id).then(apply).catch(reportError);
+        }
       }));
     }
 
@@ -383,13 +417,16 @@ function renderShellProfiles() {
       renderShellProfiles();
     }));
 
-    actions.appendChild(createProfileActionButton('✕', 'Delete', () => {
-      bridge.removeShellProfile(profile.id).then((config) => {
-        shellProfiles = config.profiles ?? [];
-        defaultShellProfileId = config.defaultProfile ?? '';
-        renderShellProfiles();
-      }).catch(reportError);
-    }));
+    if (!isDetected) {
+      actions.appendChild(createProfileActionButton('✕', 'Delete', () => {
+        bridge.removeShellProfile(profile.id).then((config) => {
+          const userIds = new Set((config.profiles ?? []).map((p) => p.id));
+          shellProfiles = [...(config.profiles ?? []), ...detectedShellProfiles.filter((p) => !userIds.has(p.id))];
+          defaultShellProfileId = config.defaultProfile ?? '';
+          renderShellProfiles();
+        }).catch(reportError);
+      }));
+    }
 
     item.append(info, actions);
     shellProfileListEl.appendChild(item);
@@ -477,7 +514,8 @@ function createShellProfileEditor() {
     }
 
     bridge.addShellProfile(profile).then((config) => {
-      shellProfiles = config.profiles ?? [];
+      const userIds = new Set((config.profiles ?? []).map((p) => p.id));
+      shellProfiles = [...(config.profiles ?? []), ...detectedShellProfiles.filter((p) => !userIds.has(p.id))];
       defaultShellProfileId = config.defaultProfile ?? '';
       editingShellProfile = null;
       renderShellProfiles();
@@ -506,10 +544,14 @@ function changePaneShell(paneId, profileId) {
     p.id === paneId ? { ...p, shellProfileId: profileId } : p
   );
 
-  bridge.destroyTerminal({ paneId });
+  // Suppress the exit handler — the old PTY is about to be replaced.
+  // spawn() on the backend already destroys any previous session.
+  node._shellChanging = true;
   node.sessionReady = false;
   node.terminal.clear();
-  initializePaneTerminal(node);
+  initializePaneTerminal(node).finally(() => {
+    node._shellChanging = false;
+  });
 }
 
 function createTerminalTheme(accent) {
@@ -1229,7 +1271,7 @@ function showContextMenu(items, x, y, paneId) {
     });
 
     if (item.children?.length) {
-      row.disabled = true;
+      row.classList.add('context-menu-parent');
       const submenu = document.createElement('div');
       submenu.className = 'context-menu-submenu';
       submenu.setAttribute('role', 'menu');
@@ -1324,7 +1366,7 @@ function showTerminalContextMenu(node, event) {
   if (shellChildren.length > 0) {
     items.push(
       { type: 'separator' },
-      { label: 'Change Shell', disabled: true, children: shellChildren },
+      { label: 'Change Shell', children: shellChildren },
     );
   }
 

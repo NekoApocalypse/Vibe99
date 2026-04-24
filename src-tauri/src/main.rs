@@ -30,6 +30,7 @@ fn main() {
             shell_profile::shell_profile_set,
             shell_profile::shell_profile_add,
             shell_profile::shell_profile_remove,
+            shell_profile::shell_profiles_detect,
             context_menu::show_context_menu,
             context_menu::emit_menu_action,
             wsl_cmd::wsl_status,

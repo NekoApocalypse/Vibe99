@@ -10,6 +10,7 @@
     "bump-version": "node ./scripts/bump-version.mjs",
     "vite:dev": "vite",
     "vite:build": "vite build",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },

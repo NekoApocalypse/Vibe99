@@ -8,26 +8,29 @@
   Desktop terminal workspace for agentic coding.
 </p>
 
-Vibe99 is a desktop terminal workspace for agentic coding. It is built for the common case where one terminal needs full attention while several others only need peripheral visibility, so the UI keeps one pane readable and stacks the rest so you can still see what the agents are doing.
+Vibe99 is a Tauri desktop terminal workspace for agentic coding. It is built for the common case where one terminal needs full attention while several others only need peripheral visibility, so the UI keeps one pane readable and stacks the rest so you can still see what agents are doing.
 
 ![Vibe99 demo](./artifacts/readme-demo.gif)
 
 ## Quick Start
 
-Linux and Windows users can install from the [GitHub Releases page](https://github.com/NekoApocalypse/Vibe99/releases).
-
-- Linux artifacts: `.AppImage`, `.deb`, and `.zip`
-- Windows artifacts: portable `.exe` and `.zip`
-
-If you are on Windows and the portable `.exe` has trouble starting, reports missing DLL files, or launches very slowly, use the Windows `.zip` artifact instead.
-
-macOS users, or anyone who wants to run from source, should clone this repository and start the app locally:
+Install dependencies and start the Tauri dev app from this repository:
 
 ```bash
-git clone https://github.com/NekoApocalypse/Vibe99.git
-cd Vibe99
 npm install
-npm start
+npm run tauri:dev
+```
+
+`npm run tauri:dev` starts Vite on `http://localhost:1420` and then launches the native Tauri shell. If Cargo is too old, update Rust with:
+
+```bash
+rustup update stable
+```
+
+Build release artifacts with:
+
+```bash
+npm run tauri:build
 ```
 
 ## Basic Controls
@@ -41,12 +44,23 @@ npm start
 - top-right `+`: add pane
 - top-right gear: open display settings
 
+## Platform Defaults And Known Issues
+
+- Terminal font defaults are platform-aware: `Consolas` on Windows, `Menlo` on macOS, and `DejaVu Sans Mono` on Linux.
+- WSL integration is available on Windows and is a no-op on macOS/Linux.
+- Known issue: the native macOS title bar can remain light while the system is in dark mode. See [issue #28](https://github.com/NekoApocalypse/Vibe99/issues/28).
+
 ## Stack
 
-- Electron
+- Tauri 2
+- Vite
+- Rust
+- `portable-pty`
 - `xterm.js`
 - `@xterm/addon-fit`
-- `@homebridge/node-pty-prebuilt-multiarch`
+- `@xterm/addon-web-links`
+- `@xterm/addon-webgl`
 
 ## Contributing
-See [CONTRIBUTING.md](/Users/liyunyang/work_2025/vibe99/CONTRIBUTING.md).
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).

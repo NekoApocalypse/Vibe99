@@ -21,9 +21,7 @@
 //!   polluting the Linux environment (P11: functional self-discipline).
 
 #[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
-use std::process::Command;
+use std::{os::windows::process::CommandExt, process::Command};
 
 // ----------------------------------------------------------------
 // Detection
@@ -48,7 +46,6 @@ pub fn is_wsl_available() -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = &Path::new(""); // suppress unused-import warning
         false
     }
 }

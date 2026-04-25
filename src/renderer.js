@@ -4,6 +4,27 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 
+function getRuntimePlatform() {
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes('win')) {
+    return 'win32';
+  }
+  if (platform.includes('mac')) {
+    return 'darwin';
+  }
+  return 'linux';
+}
+
+function getDefaultFontFamily(platform = getRuntimePlatform()) {
+  if (platform === 'win32' || platform === 'windows') {
+    return 'Consolas, "Cascadia Mono", "Courier New", monospace';
+  }
+  if (platform === 'darwin') {
+    return 'Menlo, Monaco, "SF Mono", monospace';
+  }
+  return '"DejaVu Sans Mono", "Liberation Mono", "Ubuntu Mono", monospace';
+}
+
 function basename(path) {
   return path.replace(/\/+$/, '').split('/').pop() || '/';
 }
@@ -38,7 +59,7 @@ function createUnavailableBridge() {
   const defaultCwd = '/';
 
   return {
-    platform: navigator.platform.toLowerCase().includes('mac') ? 'darwin' : 'linux',
+    platform: getRuntimePlatform(),
     defaultCwd,
     defaultTabTitle: basename(defaultCwd),
     createTerminal: fail,
@@ -94,7 +115,7 @@ function createTauriBridge(tauri) {
     .catch(() => {});
 
   return {
-    platform: navigator.platform.toLowerCase().includes('mac') ? 'darwin' : 'linux',
+    platform: getRuntimePlatform(),
     get defaultCwd() { return _resolvedCwd; },
     get defaultTabTitle() { return basename(_resolvedCwd); },
     createTerminal: (payload) =>
@@ -214,7 +235,7 @@ const paneOpacityValueEl = document.getElementById('pane-opacity-value');
 
 const settings = {
   fontSize: 13,
-  fontFamily: '',
+  fontFamily: getDefaultFontFamily(bridge.platform),
   paneOpacity: 0.8,
   paneWidth: 720,
 };
@@ -828,7 +849,7 @@ function createPane(pane) {
     cursorBlink: true,
     disableStdin: false,
     drawBoldTextInBrightColors: false,
-    fontFamily: settings.fontFamily || 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+    fontFamily: settings.fontFamily || getDefaultFontFamily(bridge.platform),
     fontSize: settings.fontSize,
     lineHeight: 1.2,
     scrollback: 5000,
@@ -897,7 +918,7 @@ function entryNeedsTabRefresh(paneId) {
 
 function fitTerminal(node, force = false) {
   node.terminal.options.fontSize = settings.fontSize;
-  node.terminal.options.fontFamily = settings.fontFamily || undefined;
+  node.terminal.options.fontFamily = settings.fontFamily || getDefaultFontFamily(bridge.platform);
   node.fitAddon.fit();
 
   const cols = Math.max(20, node.terminal.cols || 80);
@@ -1698,7 +1719,7 @@ fontSizeInputEl.addEventListener('change', () => {
 });
 
 fontFamilyInputEl.addEventListener('change', () => {
-  settings.fontFamily = fontFamilyInputEl.value.trim();
+  settings.fontFamily = fontFamilyInputEl.value.trim() || getDefaultFontFamily(bridge.platform);
   applySettings();
   render(true);
   scheduleSettingsSave();

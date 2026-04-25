@@ -867,6 +867,7 @@ function createPane(pane) {
   const terminal = new Terminal({
     allowTransparency: true,
     convertEol: false,
+    customGlyphs: true,
     cursorBlink: true,
     disableStdin: false,
     drawBoldTextInBrightColors: false,

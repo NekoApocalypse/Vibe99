@@ -9,8 +9,8 @@
     "clipboard-manager:allow-write-text",
     "fs:default",
     "shell:default",
-    "shell:allow-open",
-    "dialog:default",
-    "dialog:allow-confirm"
+    "opener:default",
+    "opener:allow-open-url",
+    "dialog:default"
   ]
 }

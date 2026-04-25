@@ -6,8 +6,7 @@
   --panel-muted: #8a8a8a;
   --text: #f4f1e8;
   --app-font-size: 13px;
-  --pane-bg-mask-color: #000000;
-  --pane-bg-mask-alpha: 0.25;
+  --pane-bg-mask-opacity: 0.25;
   --pane-width: 720px;
   --tabs-height: 34px;
   --status-height: 20px;
@@ -476,14 +475,16 @@ body {
   will-change: left;
 }
 
-/* Overlay layer (not opacity:) so terminal text under it stays sharp. */
+/* Overlay mask: solid pane-accent board on top.
+   opacity=0  → fully opaque (nothing underneath visible)
+   opacity→1 → increasingly transparent */
 .pane::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-color: var(--pane-bg-mask-color);
-  opacity: var(--pane-bg-mask-alpha);
+  background-color: var(--pane-accent);
+  opacity: calc(1 - var(--pane-bg-mask-opacity));
   transition: opacity 80ms ease;
   z-index: 10;
 }

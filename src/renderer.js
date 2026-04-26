@@ -2233,11 +2233,11 @@ function updateStatus() {
 window.addEventListener(
   'keydown',
   (event) => {
-    // Pane cycling: Ctrl+` cycles back through MRU; Shift+Ctrl+` cycles
-    // forward. Match by KeyboardEvent.code so layouts that produce `~` on
-    // shift still work, and ignore auto-repeats so each press is one step.
+    // Pane cycling: Ctrl+Tab cycles back through MRU; Ctrl+Shift+Tab cycles
+    // forward. Match by KeyboardEvent.code so the binding is layout-agnostic,
+    // and ignore auto-repeats so each press is one step.
     const cycleRecentHotkey =
-      event.ctrlKey && !event.metaKey && !event.altKey && event.code === 'Backquote' && !event.repeat;
+      event.ctrlKey && !event.metaKey && !event.altKey && event.code === 'Tab' && !event.repeat;
 
     // Command palette hotkey has highest priority
     if (isCommandPaletteHotkey(event, bridge.platform)) {

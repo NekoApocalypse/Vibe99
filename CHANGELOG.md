@@ -4,6 +4,10 @@
 
 ## 0.5.0 - 2026-04-25
 
+### Bug Fix
+
+- Extended BG mask opacity range from 0–0.8 to the full 0–1 range in both UI controls and settings sanitization.
+
 ### Added
 
 - Rewrote the app with Tauri 2 (Rust backend + vanilla JS frontend), replacing the previous Electron stack. The app now launches faster, uses significantly less memory, and produces native installers (.msi/.exe on Windows, .deb/.AppImage on Linux).

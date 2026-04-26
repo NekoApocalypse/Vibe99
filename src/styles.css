@@ -344,6 +344,39 @@ body {
     color 120ms ease;
 }
 
+.settings-action-btn {
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.settings-clickable-row {
+  cursor: pointer;
+  padding: 4px 0;
+  border-radius: 3px;
+  transition: background 120ms ease;
+}
+
+.settings-clickable-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-clickable-row:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-row-hint {
+  color: var(--panel-muted);
+  font-size: 14px;
+  transition: color 120ms ease;
+}
+
+.settings-clickable-row:hover .settings-row-hint {
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .settings-btn:hover {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
@@ -849,4 +882,115 @@ body.is-dragging-tabs {
 .color-picker-clear:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
+}
+
+/* Settings Modal Overlay */
+.settings-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.settings-modal {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  padding: 16px;
+  min-width: 300px;
+  max-width: 400px;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-modal-close {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.settings-modal-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.settings-modal-body {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-modal-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: var(--app-font-size);
+}
+
+.settings-modal-value {
+  color: var(--panel-muted);
+  font-size: 12px;
+}
+
+.settings-modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-modal-btn {
+  appearance: none;
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-modal-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.settings-modal-btn.primary {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.settings-modal-btn.primary:hover {
+  background: rgba(255, 255, 255, 0.22);
 }

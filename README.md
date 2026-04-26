@@ -36,6 +36,7 @@ npm run tauri:build
 ## Basic Controls
 
 - `Cmd+T` on macOS or `Ctrl+T` elsewhere: add a pane
+- ``Ctrl+` ``: cycle to the most recently visited pane (hold the modifier and press again to step further back; add `Shift` to cycle forward)
 - `Ctrl+B`: enter navigation mode
 - `Left` / `Right` or `H` / `L` in navigation mode: move focus
 - `Enter` in navigation mode: focus the selected terminal

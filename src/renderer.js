@@ -220,6 +220,17 @@ let isNavigationMode = false;
 let pendingTabFocus = null;
 let sessionRestoreComplete = false;
 
+// Most-recently-used pane stack for Ctrl+` cycling. Index 0 is the most
+// recently visited pane (typically equals focusedPaneId when no cycle is in
+// progress). All current pane IDs always appear exactly once.
+let paneMruOrder = panes.map((pane) => pane.id);
+
+// Transient state while the user is cycling with the modifier still held.
+// `snapshot` freezes the MRU order at the start of the cycle so repeated
+// presses step through a stable list. `index` points into that snapshot.
+// `null` means no cycle is in progress.
+let paneCycleState = null;
+
 const paneNodeMap = new Map();
 
 const stageEl = document.getElementById('stage');
@@ -242,6 +253,12 @@ const paneMaskOpacityRangeEl = document.getElementById('pane-mask-alpha-range');
 const paneMaskOpacityInputEl = document.getElementById('pane-mask-alpha-input');
 const paneMaskOpacityValueEl = document.getElementById('pane-mask-alpha-value');
 const shellProfilesSettingsBtn = document.getElementById('shell-profiles-settings-btn');
+
+// Show the platform-correct add-pane shortcut in the settings panel.
+const addPaneShortcutEl = document.querySelector('#shortcut-add-pane .settings-shortcut');
+if (addPaneShortcutEl) {
+  addPaneShortcutEl.textContent = bridge.platform === 'darwin' ? '⌘T' : 'Ctrl+T';
+}
 
 const settings = {
   fontSize: 13,
@@ -440,6 +457,8 @@ function restoreSession(session) {
     }));
     focusedPaneId = panes[0].id;
     nextPaneNumber = panes.length + 1;
+    paneMruOrder = panes.map((p) => p.id);
+    paneCycleState = null;
     return;
   }
 
@@ -450,6 +469,9 @@ function restoreSession(session) {
   );
   focusedPaneId = panes[Math.max(0, focusedIndex)].id;
   nextPaneNumber = panes.length + 1;
+  // Initial MRU order: focused pane first, then remaining panes in tab order.
+  paneMruOrder = [focusedPaneId, ...panes.map((p) => p.id).filter((id) => id !== focusedPaneId)];
+  paneCycleState = null;
 }
 
 function scheduleSettingsSave() {
@@ -1315,10 +1337,37 @@ function createPaneData() {
   return pane;
 }
 
+// Move `paneId` to the front of the MRU stack. Called when a pane is "really"
+// visited (clicked, navigation Enter, new pane, etc.) — not while previewing
+// in navigation mode and not while a cycle is in progress.
+function recordPaneVisit(paneId) {
+  if (!paneId) {
+    return;
+  }
+  if (paneMruOrder[0] === paneId) {
+    return;
+  }
+  paneMruOrder = [paneId, ...paneMruOrder.filter((id) => id !== paneId)];
+}
+
+// Drop dead pane IDs and append any new ones that snuck in. Keeps the MRU
+// invariant (one entry per current pane) without reshuffling the order.
+function syncPaneMruOrder() {
+  const known = new Set(panes.map((pane) => pane.id));
+  paneMruOrder = paneMruOrder.filter((id) => known.has(id));
+  for (const pane of panes) {
+    if (!paneMruOrder.includes(pane.id)) {
+      paneMruOrder.push(pane.id);
+    }
+  }
+}
+
 function focusPane(paneId, options = {}) {
   const { focusTerminal = true } = options;
+  paneCycleState = null;
   focusedPaneId = paneId;
   isNavigationMode = false;
+  recordPaneVisit(paneId);
   render();
   const node = paneNodeMap.get(paneId);
   if (node && focusTerminal) {
@@ -1330,8 +1379,10 @@ function focusPane(paneId, options = {}) {
 
 function addPane() {
   const newPane = createPaneData();
+  paneCycleState = null;
   panes = [...panes, newPane];
   focusedPaneId = newPane.id;
+  recordPaneVisit(newPane.id);
   render(true);
 }
 
@@ -1369,6 +1420,9 @@ function closePane(index, options = {}) {
     focusedPaneId = remainingPanes[fallbackIndex]?.id ?? remainingPanes[0]?.id ?? null;
   }
   panes = remainingPanes;
+  paneCycleState = null;
+  paneMruOrder = paneMruOrder.filter((id) => id !== closingPane.id);
+  recordPaneVisit(focusedPaneId);
 
   render(true);
 }
@@ -1615,6 +1669,59 @@ function moveFocus(delta) {
   render();
 }
 
+// Cycle to the previously-visited pane (similar to browser Ctrl+Tab).
+// First press steps from current to MRU[1]; subsequent presses while the
+// modifier is held step further back through the snapshot. Reverse cycles
+// (Shift+Ctrl+`) walk the snapshot the other way. The cycle commits when
+// the modifier is released (see commitPaneCycle).
+function cycleToRecentPane({ reverse = false } = {}) {
+  if (panes.length < 2) {
+    return;
+  }
+
+  syncPaneMruOrder();
+
+  if (!paneCycleState) {
+    paneCycleState = { snapshot: [...paneMruOrder], index: 0 };
+  }
+
+  const { snapshot } = paneCycleState;
+  if (snapshot.length < 2) {
+    return;
+  }
+
+  const step = reverse ? -1 : 1;
+  paneCycleState.index = (paneCycleState.index + step + snapshot.length) % snapshot.length;
+  const targetId = snapshot[paneCycleState.index];
+
+  if (!panes.some((pane) => pane.id === targetId)) {
+    // Target pane was closed mid-cycle — recover by aborting.
+    paneCycleState = null;
+    return;
+  }
+
+  focusedPaneId = targetId;
+  isNavigationMode = false;
+  render();
+
+  const node = paneNodeMap.get(targetId);
+  if (node) {
+    requestAnimationFrame(() => {
+      node.terminal.focus();
+    });
+  }
+}
+
+// Promote the cycle's final pane to the front of the MRU stack.
+// Called when the cycling modifier is released.
+function commitPaneCycle() {
+  if (!paneCycleState) {
+    return;
+  }
+  paneCycleState = null;
+  recordPaneVisit(focusedPaneId);
+}
+
 function isEditableTarget() {
   return (
     document.activeElement?.tagName === 'INPUT' ||
@@ -1842,7 +1949,9 @@ function showTabContextMenu(paneId, event) {
     return;
   }
 
+  paneCycleState = null;
   focusedPaneId = paneId;
+  recordPaneVisit(paneId);
   render();
 
   const pane = panes[paneIndex];
@@ -2074,10 +2183,21 @@ window.addEventListener(
       ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === 'v'
       : event.ctrlKey && !event.metaKey && !event.altKey && event.shiftKey && key === 'v';
     const windowsCtrlVPasteHotkey = isWindowsCtrlVPasteHotkey(event);
+    // Pane cycling: Ctrl+` cycles back through MRU; Shift+Ctrl+` cycles
+    // forward. Match by KeyboardEvent.code so layouts that produce `~` on
+    // shift still work, and ignore auto-repeats so each press is one step.
+    const cycleRecentHotkey =
+      event.ctrlKey && !event.metaKey && !event.altKey && event.code === 'Backquote' && !event.repeat;
 
     if (openTabHotkey) {
       event.preventDefault();
       addPane();
+      return;
+    }
+
+    if (cycleRecentHotkey && document.activeElement?.tagName !== 'INPUT') {
+      event.preventDefault();
+      cycleToRecentPane({ reverse: event.shiftKey });
       return;
     }
 
@@ -2122,6 +2242,24 @@ window.addEventListener(
   },
   true
 );
+
+// Commit the pane cycle when the cycling modifier is released. Without this,
+// a user who presses Ctrl+` and then switches to a different pane via mouse
+// would not see their MRU updated to reflect the new active pane.
+window.addEventListener('keyup', (event) => {
+  if (paneCycleState && (event.key === 'Control' || event.key === 'Meta')) {
+    commitPaneCycle();
+  }
+});
+
+// If the window loses focus mid-cycle (alt-tab away), the keyup event for
+// the cycling modifier may never fire. Commit the cycle defensively so the
+// MRU stays consistent with what the user sees.
+window.addEventListener('blur', () => {
+  if (paneCycleState) {
+    commitPaneCycle();
+  }
+});
 
 addPaneButtonEl.addEventListener('click', () => {
   try {

@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
+import Fuse from 'fuse.js';
 import '@xterm/xterm/css/xterm.css';
 
 function getRuntimePlatform() {
@@ -1718,6 +1719,260 @@ function clearPaneColor(paneId) {
   render();
 }
 
+// ----------------------------------------------------------------
+// Command palette (VIB-16): Ctrl+Shift+O to switch tabs by title.
+// VS Code Ctrl+P style: fuzzy-match the focused-pane label, ↑/↓ to
+// move selection, Enter to focus, Esc/click outside to dismiss.
+// ----------------------------------------------------------------
+
+let commandPaletteState = null;
+
+function buildCommandPaletteItems() {
+  return panes.map((pane) => ({
+    paneId: pane.id,
+    label: getPaneLabel(pane) || pane.id,
+    accent: pane.customColor || pane.accent,
+  }));
+}
+
+function renderHighlightedLabel(label, matches) {
+  const indices = [];
+  for (const m of matches ?? []) {
+    if (m.key === 'label') {
+      indices.push(...m.indices);
+    }
+  }
+  if (indices.length === 0) {
+    return [document.createTextNode(label)];
+  }
+
+  // Merge overlapping / adjacent ranges so we render contiguous spans.
+  indices.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const range of indices) {
+    const last = merged[merged.length - 1];
+    if (last && range[0] <= last[1] + 1) {
+      last[1] = Math.max(last[1], range[1]);
+    } else {
+      merged.push([...range]);
+    }
+  }
+
+  const nodes = [];
+  let cursor = 0;
+  for (const [start, end] of merged) {
+    if (start > cursor) {
+      nodes.push(document.createTextNode(label.slice(cursor, start)));
+    }
+    const span = document.createElement('span');
+    span.className = 'command-palette-match';
+    span.textContent = label.slice(start, end + 1);
+    nodes.push(span);
+    cursor = end + 1;
+  }
+  if (cursor < label.length) {
+    nodes.push(document.createTextNode(label.slice(cursor)));
+  }
+  return nodes;
+}
+
+function openCommandPalette() {
+  if (commandPaletteState) return;
+
+  // Close ambient UI that would otherwise overlap/steal focus.
+  hideContextMenu();
+  if (renamingPaneId !== null) {
+    cancelRenamePane();
+  }
+  if (!settingsPanelEl.classList.contains('is-hidden')) {
+    settingsPanelEl.classList.add('is-hidden');
+  }
+
+  const items = buildCommandPaletteItems();
+  if (items.length === 0) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'command-palette-overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'command-palette-dialog';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'command-palette-input';
+  input.placeholder = 'Switch tab by title…';
+  input.value = '';
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+
+  const list = document.createElement('div');
+  list.className = 'command-palette-list';
+  list.setAttribute('role', 'listbox');
+
+  dialog.append(input, list);
+  overlay.append(dialog);
+
+  // Mousedown anywhere inside the dialog (other than the input) would
+  // otherwise blur the input. Preventing default keeps focus pinned.
+  dialog.addEventListener('mousedown', (event) => {
+    if (event.target !== input) {
+      event.preventDefault();
+    }
+  });
+
+  // Fuse handles fuzzy matching — `ignoreLocation` so a substring anywhere
+  // in the label matches, `includeMatches` so we can highlight hits.
+  const fuse = new Fuse(items, {
+    keys: ['label'],
+    threshold: 0.4,
+    ignoreLocation: true,
+    includeMatches: true,
+  });
+
+  let highlightedIndex = 0;
+  let currentResults = [];
+
+  function getSelectedPaneId() {
+    const result = currentResults[highlightedIndex];
+    return result ? result.item.paneId : null;
+  }
+
+  function updateHighlight() {
+    const rows = list.querySelectorAll('.command-palette-item');
+    rows.forEach((el, idx) => {
+      const isOn = idx === highlightedIndex;
+      el.classList.toggle('is-highlighted', isOn);
+      el.setAttribute('aria-selected', String(isOn));
+      if (isOn) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  function renderList() {
+    list.replaceChildren();
+    if (currentResults.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'command-palette-empty';
+      empty.textContent = 'No matching tabs';
+      list.append(empty);
+      return;
+    }
+
+    currentResults.forEach((result, idx) => {
+      const { item, matches } = result;
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'command-palette-item';
+      row.setAttribute('role', 'option');
+      row.dataset.index = String(idx);
+
+      const swatch = document.createElement('span');
+      swatch.className = 'command-palette-swatch';
+      swatch.style.backgroundColor = item.accent;
+
+      const label = document.createElement('span');
+      label.className = 'command-palette-label';
+      label.append(...renderHighlightedLabel(item.label, matches));
+
+      row.append(swatch, label);
+
+      // Use mousedown (not click) so the input never blurs before we
+      // act, and preventDefault keeps focus on the input.
+      row.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+        commandPaletteSelect(item.paneId);
+      });
+      row.addEventListener('mousemove', () => {
+        if (highlightedIndex !== idx) {
+          highlightedIndex = idx;
+          updateHighlight();
+        }
+      });
+
+      list.append(row);
+    });
+    updateHighlight();
+  }
+
+  function applyQuery(query) {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      // Empty query: show all tabs in their current order, no highlighting.
+      currentResults = items.map((item) => ({ item, matches: [] }));
+    } else {
+      currentResults = fuse.search(trimmed);
+    }
+    highlightedIndex = 0;
+    renderList();
+  }
+
+  input.addEventListener('input', () => applyQuery(input.value));
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (currentResults.length > 0) {
+        highlightedIndex = (highlightedIndex + 1) % currentResults.length;
+        updateHighlight();
+      }
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (currentResults.length > 0) {
+        highlightedIndex =
+          (highlightedIndex - 1 + currentResults.length) % currentResults.length;
+        updateHighlight();
+      }
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const paneId = getSelectedPaneId();
+      if (paneId) {
+        commandPaletteSelect(paneId);
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeCommandPalette();
+    }
+  });
+
+  // Click on the dimmed backdrop closes the palette; clicks inside the
+  // dialog are absorbed by their own handlers.
+  overlay.addEventListener('mousedown', (event) => {
+    if (event.target === overlay) {
+      event.preventDefault();
+      closeCommandPalette();
+    }
+  });
+
+  document.body.append(overlay);
+  applyQuery('');
+  input.focus();
+
+  commandPaletteState = { overlay };
+}
+
+function closeCommandPalette() {
+  if (!commandPaletteState) return;
+  commandPaletteState.overlay.remove();
+  commandPaletteState = null;
+}
+
+function commandPaletteSelect(paneId) {
+  closeCommandPalette();
+  focusPane(paneId);
+}
+
+function isCommandPaletteHotkey(event) {
+  const key = event.key.toLowerCase();
+  if (key !== 'o') return false;
+  if (event.altKey) return false;
+  if (!event.shiftKey) return false;
+  if (bridge.platform === 'darwin') {
+    return event.metaKey && !event.ctrlKey;
+  }
+  return event.ctrlKey && !event.metaKey;
+}
+
 async function pasteImageIntoTerminal(paneId = focusedPaneId, options = {}) {
   const node = getPaneNode(paneId);
   if (!node?.sessionReady) {
@@ -1832,6 +2087,23 @@ function updateStatus() {
 window.addEventListener(
   'keydown',
   (event) => {
+    if (isCommandPaletteHotkey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (commandPaletteState) {
+        closeCommandPalette();
+      } else {
+        openCommandPalette();
+      }
+      return;
+    }
+
+    // While the palette is open, let its own input handle keys so global
+    // hotkeys (Ctrl+T, copy/paste, navigation) don't fire underneath.
+    if (commandPaletteState) {
+      return;
+    }
+
     const key = event.key.toLowerCase();
     const isMac = bridge.platform === 'darwin';
     const openTabHotkey = isMac

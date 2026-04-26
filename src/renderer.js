@@ -170,6 +170,140 @@ const bridge = window.__TAURI__
   ? createTauriBridge(window.__TAURI__)
   : window.vibe99 ?? createUnavailableBridge();
 
+// ----------------------------------------------------------------
+// Keyboard shortcut registry
+// ----------------------------------------------------------------
+
+/**
+ * Default keyboard shortcuts configuration
+ * Keys use platform-agnostic notation:
+ * - "ctrl" represents Ctrl on Windows/Linux and Cmd on macOS
+ * - "shift" represents Shift key
+ * - "alt" represents Alt/Option key
+ * - Single character represents the key to press
+ */
+const DEFAULT_SHORTCUTS = {
+  'new-tab': { key: 'n', modifiers: ['ctrl'], platform: 'all', action: 'addPane' },
+  'navigation-mode': { key: 'b', modifiers: ['ctrl'], platform: 'all', action: 'enterNavigationMode' },
+  'copy': { key: 'c', modifiers: ['ctrl', 'shift'], platform: 'all', action: 'copyTerminalSelection' },
+  'paste': { key: 'v', modifiers: ['ctrl', 'shift'], platform: 'all', action: 'pasteIntoTerminal' },
+  'move-left': { key: 'ArrowLeft', modifiers: [], platform: 'all', action: 'moveFocusLeft' },
+  'move-right': { key: 'ArrowRight', modifiers: [], platform: 'all', action: 'moveFocusRight' },
+  'focus-terminal': { key: 'Enter', modifiers: [], platform: 'all', action: 'focusTerminal' },
+};
+
+/**
+ * Current keyboard shortcuts (loaded from settings or defaults)
+ */
+let keyboardShortcuts = { ...DEFAULT_SHORTCUTS };
+
+/**
+ * Parse a keyboard event into a shortcut identifier
+ */
+function parseShortcutEvent(event) {
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push('ctrl');
+  if (event.metaKey) modifiers.push('ctrl'); // Treat Cmd as ctrl on macOS
+  if (event.shiftKey) modifiers.push('shift');
+  if (event.altKey) modifiers.push('alt');
+
+  const key = event.key;
+  return { key, modifiers };
+}
+
+/**
+ * Check if a keyboard event matches a shortcut definition
+ */
+function matchesShortcut(event, shortcut) {
+  const parsed = parseShortcutEvent(event);
+
+  // Check key match
+  if (parsed.key !== shortcut.key) {
+    return false;
+  }
+
+  // Check modifiers match
+  const shortcutModifiers = new Set(shortcut.modifiers);
+  const eventModifiers = new Set(parsed.modifiers);
+
+  // Check if all required modifiers are present
+  for (const mod of shortcutModifiers) {
+    if (!eventModifiers.has(mod)) {
+      return false;
+    }
+  }
+
+  // Check if no extra modifiers are present
+  for (const mod of eventModifiers) {
+    if (!shortcutModifiers.has(mod)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Format a shortcut for display (e.g., "Ctrl+Shift+C")
+ */
+function formatShortcut(shortcut) {
+  const modifiers = shortcut.modifiers.map(m => {
+    switch (m) {
+      case 'ctrl': return bridge.platform === 'darwin' ? '⌘' : 'Ctrl';
+      case 'shift': return bridge.platform === 'darwin' ? '⇧' : 'Shift';
+      case 'alt': return bridge.platform === 'darwin' ? '⌥' : 'Alt';
+      default: return m;
+    }
+  });
+
+  const key = shortcut.key === ' ' ? 'Space' : shortcut.key;
+  return [...modifiers, key].join(bridge.platform === 'darwin' ? '' : '+');
+}
+
+/**
+ * Check if two shortcuts conflict (have the same key combination)
+ */
+function shortcutsConflict(shortcut1, shortcut2) {
+  return shortcut1.key === shortcut2.key &&
+         JSON.stringify(shortcut1.modifiers.sort()) === JSON.stringify(shortcut2.modifiers.sort());
+}
+
+/**
+ * Find which shortcut ID conflicts with a given shortcut definition
+ */
+function findConflict(newShortcut, excludeId = null) {
+  for (const [id, shortcut] of Object.entries(keyboardShortcuts)) {
+    if (id !== excludeId && shortcutsConflict(newShortcut, shortcut)) {
+      return id;
+    }
+  }
+  return null;
+}
+
+/**
+ * Reset keyboard shortcuts to defaults
+ */
+function resetShortcutsToDefaults() {
+  keyboardShortcuts = { ...DEFAULT_SHORTCUTS };
+}
+
+/**
+ * Load keyboard shortcuts from settings
+ */
+function loadShortcutsFromSettings(settings) {
+  if (settings.shortcuts && typeof settings.shortcuts === 'object') {
+    // Merge user shortcuts with defaults, keeping user-defined ones
+    keyboardShortcuts = { ...DEFAULT_SHORTCUTS };
+    for (const [id, shortcut] of Object.entries(settings.shortcuts)) {
+      if (DEFAULT_SHORTCUTS[id]) {
+        keyboardShortcuts[id] = shortcut;
+      }
+    }
+  } else {
+    keyboardShortcuts = { ...DEFAULT_SHORTCUTS };
+  }
+}
+
 const initialPanes = [
   {
     id: 'p1',
@@ -248,6 +382,7 @@ const settings = {
   paneOpacity: 0.8,
   paneMaskOpacity: 0.25,
   paneWidth: 720,
+  shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 let pendingSettingsSave = null;
 
@@ -403,6 +538,13 @@ function applyPersistedSettings(nextSettings) {
   if (Number.isFinite(uiSettings.paneWidth)) {
     settings.paneWidth = uiSettings.paneWidth;
   }
+
+  // Load keyboard shortcuts
+  if (typeof uiSettings.shortcuts === 'object' && uiSettings.shortcuts !== null) {
+    loadShortcutsFromSettings(uiSettings);
+  } else {
+    loadShortcutsFromSettings({});
+  }
 }
 
 function buildSessionData() {
@@ -459,7 +601,15 @@ function scheduleSettingsSave() {
 
   pendingSettingsSave = window.setTimeout(() => {
     pendingSettingsSave = null;
-    bridge.saveSettings({ version: 3, ui: settings, session: buildSessionData() }).catch(reportError);
+    const settingsToSave = {
+      version: 3,
+      ui: {
+        ...settings,
+        shortcuts: keyboardShortcuts
+      },
+      session: buildSessionData()
+    };
+    bridge.saveSettings(settingsToSave).catch(reportError);
   }, 150);
 }
 
@@ -467,7 +617,15 @@ function flushSettingsSave() {
   if (pendingSettingsSave !== null) {
     window.clearTimeout(pendingSettingsSave);
     pendingSettingsSave = null;
-    void bridge.saveSettings({ version: 3, ui: settings, session: buildSessionData() }).catch(reportError);
+    const settingsToSave = {
+      version: 3,
+      ui: {
+        ...settings,
+        shortcuts: keyboardShortcuts
+      },
+      session: buildSessionData()
+    };
+    void bridge.saveSettings(settingsToSave).catch(reportError);
   }
 }
 
@@ -1832,64 +1990,56 @@ function updateStatus() {
 window.addEventListener(
   'keydown',
   (event) => {
-    const key = event.key.toLowerCase();
-    const isMac = bridge.platform === 'darwin';
-    const openTabHotkey = isMac
-      ? event.metaKey && !event.ctrlKey && !event.altKey && key === 't'
-      : event.ctrlKey && !event.metaKey && !event.altKey && key === 't';
-    const enterNavigationHotkey =
-      event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && key === 'b';
-    const copyHotkey = isMac
-      ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === 'c'
-      : event.ctrlKey && !event.metaKey && !event.altKey && event.shiftKey && key === 'c';
-    const pasteHotkey = isMac
-      ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === 'v'
-      : event.ctrlKey && !event.metaKey && !event.altKey && event.shiftKey && key === 'v';
-    const windowsCtrlVPasteHotkey = isWindowsCtrlVPasteHotkey(event);
-
-    if (openTabHotkey) {
-      event.preventDefault();
-      addPane();
-      return;
-    }
-
-    if (enterNavigationHotkey && document.activeElement?.tagName !== 'INPUT') {
-      event.preventDefault();
-      enterNavigationMode();
-      return;
-    }
-
-    if (copyHotkey && document.activeElement?.tagName !== 'INPUT') {
-      event.preventDefault();
-      copyTerminalSelection();
-      return;
-    }
-
-    if ((pasteHotkey || windowsCtrlVPasteHotkey) && document.activeElement?.tagName !== 'INPUT') {
+    // Handle Windows-specific Ctrl+V paste
+    if (isWindowsCtrlVPasteHotkey(event) && document.activeElement?.tagName !== 'INPUT') {
       event.preventDefault();
       void pasteIntoTerminal();
       return;
     }
 
-    if (isEditableTarget() || !isNavigationMode) {
-      return;
-    }
+    // Check keyboard shortcuts from registry
+    for (const [id, shortcut] of Object.entries(keyboardShortcuts)) {
+      if (matchesShortcut(event, shortcut)) {
+        // Skip navigation mode shortcuts if not in navigation mode
+        if ((id === 'move-left' || id === 'move-right' || id === 'focus-terminal') &&
+            !isNavigationMode) {
+          continue;
+        }
 
-    if (event.key === 'ArrowLeft' || key === 'h') {
-      event.preventDefault();
-      moveFocus(-1);
-      return;
-    }
+        // Skip shortcuts that require no editable target
+        if (document.activeElement?.tagName === 'INPUT' &&
+            (id === 'navigation-mode' || id === 'copy' || id === 'paste')) {
+          continue;
+        }
 
-    if (event.key === 'ArrowRight' || key === 'l') {
-      event.preventDefault();
-      moveFocus(1);
-      return;
-    }
+        event.preventDefault();
 
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      focusPane(focusedPaneId);
+        // Execute the shortcut action
+        switch (shortcut.action) {
+          case 'addPane':
+            addPane();
+            break;
+          case 'enterNavigationMode':
+            enterNavigationMode();
+            break;
+          case 'copyTerminalSelection':
+            copyTerminalSelection();
+            break;
+          case 'pasteIntoTerminal':
+            void pasteIntoTerminal();
+            break;
+          case 'moveFocusLeft':
+            moveFocus(-1);
+            break;
+          case 'moveFocusRight':
+            moveFocus(1);
+            break;
+          case 'focusTerminal':
+            focusPane(focusedPaneId);
+            break;
+        }
+        return;
+      }
     }
   },
   true
@@ -2124,4 +2274,229 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
   reportError(event.reason);
+});
+
+// ----------------------------------------------------------------
+// Keyboard Shortcuts UI
+// ----------------------------------------------------------------
+
+const shortcutsListEl = document.getElementById('shortcuts-list');
+const shortcutsResetBtn = document.getElementById('shortcuts-reset-btn');
+
+/**
+ * Get human-readable names for shortcut actions
+ */
+function getShortcutActionName(actionId) {
+  const names = {
+    'new-tab': 'New Tab',
+    'navigation-mode': 'Navigation Mode',
+    'copy': 'Copy',
+    'paste': 'Paste',
+    'move-left': 'Move Left',
+    'move-right': 'Move Right',
+    'focus-terminal': 'Focus Terminal',
+  };
+  return names[actionId] || actionId;
+}
+
+/**
+ * Get description for shortcut actions
+ */
+function getShortcutActionDescription(actionId) {
+  const descriptions = {
+    'new-tab': 'Create a new terminal pane',
+    'navigation-mode': 'Enter keyboard navigation mode',
+    'copy': 'Copy selected text to clipboard',
+    'paste': 'Paste clipboard content to terminal',
+    'move-left': 'Focus previous pane in navigation mode',
+    'move-right': 'Focus next pane in navigation mode',
+    'focus-terminal': 'Focus the selected terminal',
+  };
+  return descriptions[actionId] || '';
+}
+
+/**
+ * Render the keyboard shortcuts list
+ */
+function renderShortcutsList() {
+  if (!shortcutsListEl) return;
+
+  shortcutsListEl.replaceChildren();
+
+  for (const [id, shortcut] of Object.entries(keyboardShortcuts)) {
+    const item = document.createElement('div');
+    item.className = 'shortcut-item';
+    item.dataset.shortcutId = id;
+
+    const info = document.createElement('div');
+    info.className = 'shortcut-info';
+
+    const name = document.createElement('div');
+    name.className = 'shortcut-name';
+    name.textContent = getShortcutActionName(id);
+
+    const description = document.createElement('div');
+    description.className = 'shortcut-description';
+    description.textContent = getShortcutActionDescription(id);
+
+    info.append(name, description);
+
+    const binding = document.createElement('div');
+    binding.className = 'shortcut-binding';
+
+    const keys = document.createElement('div');
+    keys.className = 'shortcut-keys';
+    keys.textContent = formatShortcut(shortcut);
+    keys.addEventListener('click', () => {
+      startShortcutRecording(id);
+    });
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'shortcut-edit-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Change shortcut';
+    editBtn.addEventListener('click', () => {
+      startShortcutRecording(id);
+    });
+
+    binding.append(keys, editBtn);
+    item.append(info, binding);
+    shortcutsListEl.appendChild(item);
+  }
+}
+
+/**
+ * Start recording a new keyboard shortcut
+ */
+function startShortcutRecording(shortcutId) {
+  const shortcut = keyboardShortcuts[shortcutId];
+  if (!shortcut) return;
+
+  // Create recording overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'shortcut-recorder-overlay';
+  overlay.id = 'shortcut-recorder-overlay';
+
+  overlay.innerHTML = `
+    <div class="shortcut-recorder-dialog">
+      <div class="shortcut-recorder-title">Record Shortcut</div>
+      <div class="shortcut-recorder-hint">Press your new key combination for "${getShortcutActionName(shortcutId)}"</div>
+      <div class="shortcut-recorder-keys" id="shortcut-recorder-keys">
+        <div class="shortcut-recorder-key">Press keys...</div>
+      </div>
+      <div class="shortcut-recorder-actions">
+        <button type="button" class="shortcut-recorder-btn" id="shortcut-recorder-cancel">Cancel</button>
+        <button type="button" class="shortcut-recorder-btn is-primary" id="shortcut-recorder-save" disabled>Save</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  let recordedShortcut = null;
+  const keysDisplay = overlay.querySelector('#shortcut-recorder-keys');
+  const saveBtn = overlay.querySelector('#shortcut-recorder-save');
+  const cancelBtn = overlay.querySelector('#shortcut-recorder-cancel');
+
+  const keydownHandler = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Handle escape key
+    if (event.key === 'Escape') {
+      closeShortcutRecorder();
+      return;
+    }
+
+    // Parse the shortcut
+    const parsed = parseShortcutEvent(event);
+
+    // Update display
+    keysDisplay.innerHTML = '';
+    const modifiers = [...parsed.modifiers, parsed.key];
+    for (const mod of modifiers) {
+      const keyEl = document.createElement('div');
+      keyEl.className = 'shortcut-recorder-key';
+      keyEl.textContent = mod === 'ctrl' ? (bridge.platform === 'darwin' ? '⌘' : 'Ctrl') :
+                         mod === 'shift' ? (bridge.platform === 'darwin' ? '⇧' : 'Shift') :
+                         mod === 'alt' ? (bridge.platform === 'darwin' ? '⌥' : 'Alt') :
+                         mod === ' ' ? 'Space' : mod;
+      keysDisplay.appendChild(keyEl);
+    }
+
+    // Check for conflicts
+    const newShortcut = { key: parsed.key, modifiers: parsed.modifiers };
+    const conflictId = findConflict(newShortcut, shortcutId);
+
+    if (conflictId) {
+      const conflictWarning = document.createElement('div');
+      conflictWarning.className = 'shortcut-conflict-warning';
+      conflictWarning.textContent = `Conflicts with "${getShortcutActionName(conflictId)}"`;
+      keysDisplay.appendChild(conflictWarning);
+      saveBtn.disabled = true;
+    } else {
+      saveBtn.disabled = false;
+      recordedShortcut = newShortcut;
+    }
+  };
+
+  overlay.addEventListener('keydown', keydownHandler, true);
+
+  const closeShortcutRecorder = () => {
+    document.removeEventListener('keydown', keydownHandler, true);
+    overlay.remove();
+  };
+
+  cancelBtn.addEventListener('click', closeShortcutRecorder);
+
+  saveBtn.addEventListener('click', () => {
+    if (recordedShortcut) {
+      // Update the shortcut
+      keyboardShortcuts[shortcutId] = {
+        ...shortcut,
+        key: recordedShortcut.key,
+        modifiers: recordedShortcut.modifiers,
+      };
+
+      // Save and update UI
+      scheduleSettingsSave();
+      renderShortcutsList();
+      closeShortcutRecorder();
+    }
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      closeShortcutRecorder();
+    }
+  });
+
+  // Auto-focus on the overlay
+  overlay.focus();
+}
+
+/**
+ * Reset shortcuts to defaults
+ */
+function resetShortcutsToDefaultsAndSave() {
+  resetShortcutsToDefaults();
+  scheduleSettingsSave();
+  renderShortcutsList();
+}
+
+// Initialize shortcuts UI
+if (shortcutsResetBtn) {
+  shortcutsResetBtn.addEventListener('click', () => {
+    if (confirm('Reset all keyboard shortcuts to their default values?')) {
+      resetShortcutsToDefaultsAndSave();
+    }
+  });
+}
+
+// Render shortcuts when settings panel opens
+settingsButtonEl?.addEventListener('click', () => {
+  queueMicrotask(() => {
+    renderShortcutsList();
+  });
 });

@@ -850,3 +850,212 @@ body.is-dragging-tabs {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
 }
+
+/* Keyboard Shortcuts Interface */
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.shortcut-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.shortcut-item.is-recording {
+  background: rgba(255, 196, 93, 0.1);
+  border-color: rgba(255, 196, 93, 0.3);
+}
+
+.shortcut-item.has-conflict {
+  background: rgba(255, 107, 87, 0.1);
+  border-color: rgba(255, 107, 87, 0.3);
+}
+
+.shortcut-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shortcut-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.shortcut-description {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.shortcut-binding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: inherit;
+  min-width: 80px;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.shortcut-keys:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.shortcut-keys.is-recording {
+  background: rgba(255, 196, 93, 0.15);
+  border-color: rgba(255, 196, 93, 0.4);
+  color: #ffc45d;
+}
+
+.shortcut-conflict-warning {
+  font-size: 11px;
+  color: #ff6b57;
+  margin-top: 2px;
+}
+
+.shortcut-edit-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shortcut-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.shortcut-recorder-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.shortcut-recorder-dialog {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  padding: 24px;
+  min-width: 320px;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  text-align: center;
+}
+
+.shortcut-recorder-title {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.shortcut-recorder-hint {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 20px;
+}
+
+.shortcut-recorder-keys {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  min-height: 40px;
+}
+
+.shortcut-recorder-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.shortcut-recorder-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.shortcut-recorder-btn {
+  appearance: none;
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.shortcut-recorder-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.shortcut-recorder-btn.is-primary {
+  background: rgba(255, 196, 93, 0.2);
+  border-color: rgba(255, 196, 93, 0.4);
+  color: #ffc45d;
+}
+
+.shortcut-recorder-btn.is-primary:hover {
+  background: rgba(255, 196, 93, 0.3);
+  border-color: rgba(255, 196, 93, 0.5);
+}

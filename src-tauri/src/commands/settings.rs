@@ -139,6 +139,9 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
     let pane_opacity = get_number(ui, "paneOpacity", DEFAULT_PANE_OPACITY);
     let pane_opacity = ((pane_opacity * 100.0).round() / 100.0).clamp(0.55, 1.0);
 
+    let pane_mask_opacity = get_number(ui, "paneMaskOpacity", 0.25);
+    let pane_mask_opacity = ((pane_mask_opacity * 100.0).round() / 100.0).clamp(0.0, 0.8);
+
     let pane_width = get_number(ui, "paneWidth", DEFAULT_PANE_WIDTH as f64);
     let pane_width = ((pane_width / 10.0).round() * 10.0).clamp(520.0, 2000.0) as u32;
 
@@ -152,6 +155,7 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
     let mut result = serde_json::json!({
         "fontSize": font_size,
         "paneOpacity": pane_opacity,
+        "paneMaskOpacity": pane_mask_opacity,
         "paneWidth": pane_width,
     });
 
@@ -159,6 +163,14 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
         result.as_object_mut().unwrap().insert(
             "fontFamily".into(),
             Value::String(font_family.to_string()),
+        );
+    }
+
+    // Preserve keyboard shortcuts if present
+    if let Some(shortcuts) = ui.get("shortcuts").and_then(|v| v.as_object()) {
+        result.as_object_mut().unwrap().insert(
+            "shortcuts".into(),
+            Value::Object(shortcuts.clone()),
         );
     }
 
@@ -272,6 +284,7 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
                 "ui": {
                     "fontSize": DEFAULT_FONT_SIZE,
                     "paneOpacity": DEFAULT_PANE_OPACITY,
+                    "paneMaskOpacity": 0.25,
                     "paneWidth": DEFAULT_PANE_WIDTH,
                 },
                 "shell": {

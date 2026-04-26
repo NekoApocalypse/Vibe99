@@ -7,6 +7,10 @@
 //
 // Lifecycle expected from the host:
 //   - call `noteData(paneId)` for every chunk of PTY output
+//   - call `noteResize(paneId)` whenever a pane's PTY is resized (window
+//     resize, font-size change, layout change, …) — the SIGWINCH redraw
+//     burst that follows is not "real" new content, and we mute data
+//     notifications for a short window so it doesn't trip the alert.
 //   - call `setFocus(paneId | null)` whenever the focused pane changes
 //   - call `forget(paneId)` when a pane is destroyed
 //
@@ -24,10 +28,16 @@
 // from their own startup banner.
 
 const DEFAULT_SETTLE_MS = 1500;
+// Window after a resize during which incoming data is treated as redraw
+// residue (SIGWINCH → shell redraw) rather than fresh content. Long enough
+// to cover the redraw of typical TUI apps (vim, htop, tmux) without
+// noticeably delaying genuine post-resize output detection.
+const DEFAULT_RESIZE_QUIET_MS = 800;
 
 /**
  * @typedef {object} PaneActivityWatcherOptions
  * @property {number} [settleMs]                — quiet period before alerting (ms).
+ * @property {number} [resizeQuietMs]           — window after resize during which data is ignored (ms).
  * @property {boolean} [globalEnabled]          — initial value for the global kill switch.
  * @property {(paneId: string) => void} [onAlert]
  * @property {(paneId: string) => void} [onClear]
@@ -38,10 +48,11 @@ const DEFAULT_SETTLE_MS = 1500;
  */
 export function createPaneActivityWatcher(options = {}) {
   const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
+  const resizeQuietMs = options.resizeQuietMs ?? DEFAULT_RESIZE_QUIET_MS;
   const onAlert = options.onAlert;
   const onClear = options.onClear;
 
-  // paneId -> { hasBeenFocused, timer, alerted, paneEnabled }
+  // paneId -> { hasBeenFocused, timer, alerted, paneEnabled, resizeQuietUntil }
   const states = new Map();
   let focusedPaneId = null;
   let globalEnabled = options.globalEnabled ?? true;
@@ -49,7 +60,13 @@ export function createPaneActivityWatcher(options = {}) {
   function ensure(paneId) {
     let s = states.get(paneId);
     if (!s) {
-      s = { hasBeenFocused: false, timer: null, alerted: false, paneEnabled: true };
+      s = {
+        hasBeenFocused: false,
+        timer: null,
+        alerted: false,
+        paneEnabled: true,
+        resizeQuietUntil: 0,
+      };
       states.set(paneId, s);
     }
     return s;
@@ -87,6 +104,10 @@ export function createPaneActivityWatcher(options = {}) {
       if (!s.hasBeenFocused) return;
       if (paneId === focusedPaneId) return;
       if (s.alerted) return;
+      // Within the resize quiet window, treat incoming chunks as SIGWINCH
+      // redraw residue: don't alert, and don't extend any pending timer
+      // — the genuine pre-resize burst (if any) keeps its own timer.
+      if (Date.now() < s.resizeQuietUntil) return;
       if (s.timer !== null) clearTimeout(s.timer);
       s.timer = setTimeout(() => {
         s.timer = null;
@@ -95,6 +116,17 @@ export function createPaneActivityWatcher(options = {}) {
         s.alerted = true;
         onAlert?.(paneId);
       }, settleMs);
+    },
+
+    /**
+     * Mark a pane as having just been resized. Opens a brief quiet window
+     * during which `noteData` calls are ignored, since a PTY resize triggers
+     * SIGWINCH and the shell typically responds by redrawing the screen —
+     * not "real" new output the user has missed.
+     */
+    noteResize(paneId) {
+      const s = ensure(paneId);
+      s.resizeQuietUntil = Date.now() + resizeQuietMs;
     },
 
     /** Drop all state for `paneId` (clears any pending timer or alert). */

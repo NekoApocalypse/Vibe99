@@ -1163,6 +1163,9 @@ function fitTerminal(node, force = false) {
       cols,
       rows,
     });
+    // SIGWINCH on the PTY usually triggers a screen redraw — those bytes
+    // would otherwise look like background activity and trip the alert.
+    paneActivityWatcher.noteResize(node.paneId);
   }
 
   node.sizeKey = nextSizeKey;

@@ -558,15 +558,15 @@ body {
 }
 
 /* Overlay mask: solid pane-accent board on top.
-   opacity=0  → fully opaque (nothing underneath visible)
-   opacity→1 → increasingly transparent */
+   --pane-bg-mask-opacity directly controls overlay opacity:
+   0 = fully transparent, higher = more opaque mask. */
 .pane::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   background-color: var(--pane-accent);
-  opacity: calc(1 - var(--pane-bg-mask-opacity));
+  opacity: var(--pane-bg-mask-opacity);
   transition: opacity 80ms ease;
   z-index: 10;
 }

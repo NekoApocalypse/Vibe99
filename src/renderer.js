@@ -285,7 +285,7 @@ const settings = {
   fontSize: 13,
   fontFamily: getDefaultFontFamily(bridge.platform),
   paneOpacity: 0.8,
-  paneMaskOpacity: 0.25,
+  paneMaskOpacity: 0.75,
   paneWidth: 720,
   breathingAlertEnabled: true,
 };
@@ -426,12 +426,17 @@ function applyPersistedSettings(nextSettings) {
   }
 
   if (Number.isFinite(uiSettings.paneMaskOpacity)) {
-    settings.paneMaskOpacity = Math.max(0, Math.min(0.8, uiSettings.paneMaskOpacity));
+    settings.paneMaskOpacity = Math.max(0, Math.min(1, uiSettings.paneMaskOpacity));
   }
 
   // Migrate legacy paneMaskAlpha → paneMaskOpacity
   if (Number.isFinite(uiSettings.paneMaskAlpha) && !Number.isFinite(uiSettings.paneMaskOpacity)) {
-    settings.paneMaskOpacity = Math.max(0, Math.min(0.8, uiSettings.paneMaskAlpha));
+    settings.paneMaskOpacity = Math.max(0, Math.min(1, uiSettings.paneMaskAlpha));
+  }
+
+  // Migrate v3 inverted mask opacity: old value was 1 - overlay opacity.
+  if (nextSettings?.version != null && nextSettings.version < 4) {
+    settings.paneMaskOpacity = 1 - settings.paneMaskOpacity;
   }
 
   if (Number.isFinite(uiSettings.paneWidth)) {
@@ -512,7 +517,7 @@ function scheduleSettingsSave() {
   pendingSettingsSave = window.setTimeout(() => {
     pendingSettingsSave = null;
     const settingsToSave = {
-      version: 3,
+      version: 4,
       ui: {
         ...settings,
         shortcuts: ShortcutsRegistry.getShortcutsForSave()
@@ -528,7 +533,7 @@ function flushSettingsSave() {
     window.clearTimeout(pendingSettingsSave);
     pendingSettingsSave = null;
     const settingsToSave = {
-      version: 3,
+      version: 4,
       ui: {
         ...settings,
         shortcuts: ShortcutsRegistry.getShortcutsForSave()
@@ -2382,7 +2387,7 @@ function updatePaneMaskOpacity(nextValue) {
     return;
   }
 
-  settings.paneMaskOpacity = Math.max(0, Math.min(0.8, Number(parsedValue.toFixed(2))));
+  settings.paneMaskOpacity = Math.max(0, Math.min(1, Number(parsedValue.toFixed(2))));
   applySettings();
   scheduleSettingsSave();
 }

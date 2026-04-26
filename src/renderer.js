@@ -1636,6 +1636,20 @@ function renderPanes(refit = false) {
       node.accent = accentColor;
     }
 
+    // VIB-21: Update color bar when customColor changes
+    let colorBar = node.root.querySelector('.pane-color-bar');
+    if (pane.customColor) {
+      if (!colorBar) {
+        colorBar = document.createElement('div');
+        colorBar.className = 'pane-color-bar';
+        const shell = node.root.querySelector('.pane-shell');
+        node.root.insertBefore(colorBar, shell);
+      }
+      colorBar.style.backgroundColor = pane.customColor;
+    } else if (colorBar) {
+      colorBar.remove();
+    }
+
     if (refit || node.needsFit) {
       fitTerminal(node, true);
     }

@@ -8,6 +8,8 @@ import {
   isCommandPaletteOpen,
   isCommandPaletteHotkey,
 } from './command-palette.js';
+import { createPaneActivityWatcher } from './pane-activity-watcher.js';
+import { createBreathingMaskAlert } from './pane-alert-breathing-mask.js';
 import '@xterm/xterm/css/xterm.css';
 
 import * as ShortcutsRegistry from './shortcuts-registry.js';
@@ -307,6 +309,22 @@ function flushTerminalWrites() {
   terminalWriteBuffer.clear();
 }
 
+// Surface "settled output on a backgrounded pane" via a pulsing mask. The
+// watcher just decides *when* a pane should alert; the alert renderer
+// decides *how* it looks. To switch styles (border flash, tab badge, …),
+// swap `createBreathingMaskAlert` for another renderer with the same shape.
+const paneAlert = createBreathingMaskAlert();
+const paneActivityWatcher = createPaneActivityWatcher({
+  onAlert: (paneId) => {
+    const node = paneNodeMap.get(paneId);
+    if (node) paneAlert.setAlerted(node.root, true);
+  },
+  onClear: (paneId) => {
+    const node = paneNodeMap.get(paneId);
+    if (node) paneAlert.setAlerted(node.root, false);
+  },
+});
+
 const removeTerminalDataListener = bridge.onTerminalData(({ paneId, data }) => {
   const node = paneNodeMap.get(paneId);
   if (!node) return;
@@ -319,6 +337,7 @@ const removeTerminalDataListener = bridge.onTerminalData(({ paneId, data }) => {
   if (!terminalWriteRaf) {
     terminalWriteRaf = requestAnimationFrame(flushTerminalWrites);
   }
+  paneActivityWatcher.noteData(paneId);
 });
 
 const removeTerminalExitListener = bridge.onTerminalExit(({ paneId, exitCode }) => {
@@ -1188,6 +1207,7 @@ function createPane(pane) {
   terminalHost.className = 'terminal-host';
   surface.append(terminalHost);
   body.append(surface);
+  paneAlert.attach(paneEl, body);
   shell.append(body);
   paneEl.append(shell);
 
@@ -1346,6 +1366,7 @@ function ensurePaneNodes() {
 
   for (const [paneId, node] of paneNodeMap.entries()) {
     if (!activeIds.has(paneId)) {
+      paneActivityWatcher.forget(paneId);
       bridge.destroyTerminal({ paneId });
       node.terminal.dispose();
       node.root.remove();
@@ -1668,6 +1689,7 @@ function renderPanes(refit = false) {
   const focusedIndex = getFocusedIndex();
 
   ensurePaneNodes();
+  paneActivityWatcher.setFocus(focusedPaneId);
 
   panes.forEach((pane, index) => {
     const node = paneNodeMap.get(pane.id);

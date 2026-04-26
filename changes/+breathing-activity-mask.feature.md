@@ -1,0 +1,1 @@
+When a backgrounded pane has settled output that you haven't seen yet, its mask now pulses gently in the pane's accent color so you notice the new activity; switching back to the pane stops the animation immediately.

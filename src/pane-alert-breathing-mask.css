@@ -1,0 +1,36 @@
+/* Breathing-mask alert: layered above .pane-surface so the pulse reads
+   even over busy terminal content. Color follows --pane-accent which the
+   renderer already sets per pane. */
+.pane-activity-mask {
+  position: absolute;
+  inset: 0;
+  background: var(--pane-accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes pane-breathing-pulse {
+  0%,
+  100% {
+    opacity: 0.06;
+  }
+  50% {
+    opacity: 0.32;
+  }
+}
+
+.pane.has-pending-activity .pane-activity-mask {
+  animation: pane-breathing-pulse 2.4s ease-in-out infinite;
+}
+
+.pane.is-focused .pane-activity-mask {
+  animation: none;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane.has-pending-activity .pane-activity-mask {
+    animation: none;
+    opacity: 0.18;
+  }
+}

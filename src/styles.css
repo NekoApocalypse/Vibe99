@@ -221,6 +221,8 @@ body {
 }
 
 .tabs-fullscreen {
+  appearance: none;
+  border: none;
   width: 34px;
   height: 33px;
   flex: 0 0 auto;

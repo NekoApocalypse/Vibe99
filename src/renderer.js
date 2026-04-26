@@ -535,7 +535,6 @@ function loadShellProfiles() {
     // Merge: user profiles first, then detected ones not already present.
     shellProfiles = [...userProfiles, ...detected.filter((p) => !userIds.has(p.id))];
     defaultShellProfileId = config.defaultProfile ?? '';
-    renderShellProfiles();
   }).catch(reportError);
 }
 
@@ -766,6 +765,7 @@ function changePaneShell(paneId, profileId) {
 // ----------------------------------------------------------------
 
 function openShellProfilesModal() {
+  loadShellProfiles();
   const overlay = document.createElement('div');
   overlay.className = 'settings-modal-overlay';
 
@@ -2210,7 +2210,6 @@ settingsButtonEl.addEventListener('click', (event) => {
   const wasHidden = settingsPanelEl.classList.toggle('is-hidden');
   if (wasHidden) {
     editingShellProfile = null;
-    loadShellProfiles();
   }
 });
 

@@ -762,6 +762,14 @@ function getPaneLeft(index, previewWidth, focusedIndex) {
   return focusedLeft + settings.paneWidth + (index - focusedIndex - 1) * previewWidth;
 }
 
+function getTextColorForBackground(hexColor) {
+  const r = parseInt(hexColor.slice(1, 3), 16);
+  const g = parseInt(hexColor.slice(3, 5), 16);
+  const b = parseInt(hexColor.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#000' : '#fff';
+}
+
 function createTab(pane, index, focusedIndex, dragMeta) {
   const tab = document.createElement('div');
   tab.className = `tab${index === focusedIndex ? ' is-focused' : ''}`;
@@ -773,6 +781,7 @@ function createTab(pane, index, focusedIndex, dragMeta) {
     tab.classList.add('insert-before');
   }
   tab.style.setProperty('--pane-accent', pane.accent);
+  tab.style.setProperty('--tab-text-color', getTextColorForBackground(pane.accent));
   tab.dataset.paneId = pane.id;
   tab.addEventListener('contextmenu', (event) => {
     event.preventDefault();

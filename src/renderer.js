@@ -412,6 +412,7 @@ function buildSessionData() {
       title: p.title,
       cwd: p.cwd,
       accent: p.accent,
+      customColor: p.customColor,
       shellProfileId: p.shellProfileId,
     })),
     focusedPaneIndex: focusedIndex >= 0 ? focusedIndex : 0,
@@ -427,6 +428,7 @@ function restoreSession(session) {
       terminalTitle: bridge.defaultTabTitle,
       cwd: (typeof p.cwd === 'string' && p.cwd) || bridge.defaultCwd,
       accent: p.accent,
+      customColor: (typeof p.customColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(p.customColor) && p.customColor) || undefined,
       shellProfileId: (typeof p.shellProfileId === 'string' && p.shellProfileId) || null,
     }));
 
@@ -798,8 +800,9 @@ function createTab(pane, index, focusedIndex, dragMeta) {
   if (dragMeta?.insertBefore) {
     tab.classList.add('insert-before');
   }
-  tab.style.setProperty('--pane-accent', pane.accent);
-  tab.style.setProperty('--tab-text-color', getTextColorForBackground(pane.accent));
+  const accentColor = pane.customColor || pane.accent;
+  tab.style.setProperty('--pane-accent', accentColor);
+  tab.style.setProperty('--tab-text-color', getTextColorForBackground(accentColor));
   tab.dataset.paneId = pane.id;
   tab.addEventListener('contextmenu', (event) => {
     event.preventDefault();
@@ -875,10 +878,19 @@ function createTab(pane, index, focusedIndex, dragMeta) {
 function createPane(pane) {
   const paneEl = document.createElement('article');
   paneEl.className = 'pane';
-  paneEl.style.setProperty('--pane-accent', pane.accent);
+  const accentColor = pane.customColor || pane.accent;
+  paneEl.style.setProperty('--pane-accent', accentColor);
   paneEl.addEventListener('click', () => {
     focusPane(pane.id);
   });
+
+  // VIB-10: Add custom color bar at top of pane (above background mask)
+  if (pane.customColor) {
+    const colorBar = document.createElement('div');
+    colorBar.className = 'pane-color-bar';
+    colorBar.style.backgroundColor = pane.customColor;
+    paneEl.appendChild(colorBar);
+  }
 
   const shell = document.createElement('div');
   shell.className = 'pane-shell';
@@ -907,7 +919,7 @@ function createPane(pane) {
     fontSize: settings.fontSize,
     lineHeight: 1.2,
     scrollback: 5000,
-    theme: createTerminalTheme(pane.accent),
+    theme: createTerminalTheme(accentColor),
   });
   const fitAddon = new FitAddon();
   const webLinksAddon = new WebLinksAddon(handleTerminalLinkActivation);
@@ -1335,17 +1347,18 @@ function renderPanes(refit = false) {
     const node = paneNodeMap.get(pane.id);
     const left = getPaneLeft(index, previewWidth, focusedIndex);
     const isFocused = index === focusedIndex;
+    const accentColor = pane.customColor || pane.accent;
 
     node.root.classList.toggle('is-focused', isFocused);
     node.root.classList.toggle('is-navigation-target', isFocused && isNavigationMode);
-    node.root.style.setProperty('--pane-accent', pane.accent);
+    node.root.style.setProperty('--pane-accent', accentColor);
     node.root.style.left = `${left}px`;
     node.root.style.zIndex = String(index + 1);
     node.root.style.height = `${stageHeight}px`;
 
-    if (node.accent !== pane.accent) {
-      node.terminal.options.theme = createTerminalTheme(pane.accent);
-      node.accent = pane.accent;
+    if (node.accent !== accentColor) {
+      node.terminal.options.theme = createTerminalTheme(accentColor);
+      node.accent = accentColor;
     }
 
     if (refit || node.needsFit) {
@@ -1581,6 +1594,7 @@ async function showTerminalContextMenu(node, event) {
     { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text, shortcut: '⇧⌘V' },
     { label: 'Paste Image', action: 'terminal-paste-image', disabled: !clipboardSnapshot.hasImage },
     { type: 'separator' },
+    { label: 'Change Color...', action: 'terminal-change-color' },
     { label: 'Select All', action: 'terminal-select-all', shortcut: '⌘A' },
   ];
 
@@ -1603,11 +1617,105 @@ function showTabContextMenu(paneId, event) {
   focusedPaneId = paneId;
   render();
 
+  const pane = panes[paneIndex];
+  const hasCustomColor = pane && pane.customColor !== undefined;
+
   const items = [
+    { label: 'Change Color...', action: 'tab-change-color' },
+    { type: 'separator' },
     { label: 'Rename Tab', action: 'tab-rename' },
     { label: 'Close Tab', action: 'tab-close', disabled: panes.length <= 1 },
   ];
   showContextMenu(items, event.clientX, event.clientY, paneId);
+}
+
+// Preset colors for pane customization (VIB-10)
+const presetPaneColors = [
+  '#ff6b57', '#ff9f1c', '#ffd166', '#06d6a0',
+  '#118ab2', '#9b5de5', '#ef476f', '#7bd389',
+  '#5cc8ff', '#f4a261', '#e76f51', '#2a9d8f',
+  '#e9c46a', '#f4a261', '#264653', '#8d99ae',
+];
+
+function showColorPicker(paneId) {
+  hideContextMenu();
+
+  const paneIndex = getPaneIndex(paneId);
+  if (paneIndex === -1) return;
+
+  const pane = panes[paneIndex];
+  const currentColor = pane.customColor || pane.accent;
+
+  const picker = document.createElement('div');
+  picker.className = 'color-picker-overlay';
+  picker.innerHTML = `
+    <div class="color-picker-dialog">
+      <div class="color-picker-header">
+        <span>Pane Color</span>
+        <button type="button" class="color-picker-close" aria-label="Close">×</button>
+      </div>
+      <div class="color-picker-presets">
+        ${presetPaneColors.map(color => `
+          <button type="button" class="color-preset${color === currentColor ? ' is-selected' : ''}"
+                  style="--color: ${color}" data-color="${color}" aria-label="Select ${color}"></button>
+        `).join('')}
+      </div>
+      <div class="color-picker-custom">
+        <label>Custom:</label>
+        <input type="color" class="color-picker-input" value="${currentColor}" />
+      </div>
+      <div class="color-picker-footer">
+        <button type="button" class="color-picker-clear">Clear Color</button>
+      </div>
+    </div>
+  `;
+
+  picker.addEventListener('click', (e) => {
+    if (e.target === picker) {
+      picker.remove();
+    }
+  });
+
+  picker.querySelector('.color-picker-close').addEventListener('click', () => picker.remove());
+
+  picker.querySelectorAll('.color-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const color = btn.dataset.color;
+      setPaneColor(paneId, color);
+      picker.remove();
+    });
+  });
+
+  const colorInput = picker.querySelector('.color-picker-input');
+  colorInput.addEventListener('input', () => {
+    setPaneColor(paneId, colorInput.value);
+  });
+
+  picker.querySelector('.color-picker-clear').addEventListener('click', () => {
+    clearPaneColor(paneId);
+    picker.remove();
+  });
+
+  document.body.appendChild(picker);
+  colorInput.focus();
+}
+
+function setPaneColor(paneId, color) {
+  const paneIndex = getPaneIndex(paneId);
+  if (paneIndex === -1) return;
+
+  panes[paneIndex] = { ...panes[paneIndex], customColor: color };
+  scheduleSettingsSave();
+  render();
+}
+
+function clearPaneColor(paneId) {
+  const paneIndex = getPaneIndex(paneId);
+  if (paneIndex === -1) return;
+
+  panes[paneIndex] = { ...panes[paneIndex], customColor: undefined };
+  scheduleSettingsSave();
+  render();
 }
 
 async function pasteImageIntoTerminal(paneId = focusedPaneId, options = {}) {
@@ -1646,6 +1754,11 @@ function handleMenuAction(action, paneId) {
     return;
   }
 
+  if (action === 'terminal-change-color') {
+    showColorPicker(paneId);
+    return;
+  }
+
   if (action === 'tab-rename') {
     const paneIndex = getPaneIndex(paneId);
     if (paneIndex !== -1) {
@@ -1659,6 +1772,22 @@ function handleMenuAction(action, paneId) {
     if (paneIndex !== -1) {
       closePane(paneIndex);
     }
+    return;
+  }
+
+  if (action === 'tab-change-color') {
+    showColorPicker(paneId);
+    return;
+  }
+
+  if (action.startsWith('tab-set-color:')) {
+    const color = action.slice('tab-set-color:'.length);
+    setPaneColor(paneId, color);
+    return;
+  }
+
+  if (action === 'tab-clear-color') {
+    clearPaneColor(paneId);
     return;
   }
 

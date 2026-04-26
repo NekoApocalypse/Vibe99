@@ -44,7 +44,7 @@ const DEFAULT_SETTLE_MS = 1500;
 // happens to land inside the post-resize window is dropped. False alerts
 // from zellij/tmux redraws are far more annoying than missing a beat of
 // output that just happened to coincide with a window resize.
-const DEFAULT_RESIZE_SETTLE_MS = 2500;
+const DEFAULT_RESIZE_SETTLE_MS = 15000;
 
 /**
  * @typedef {object} PaneActivityWatcherOptions

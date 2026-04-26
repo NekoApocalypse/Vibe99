@@ -643,7 +643,6 @@ function openShellProfilesModal() {
       </div>
       <div class="settings-modal-footer">
         <button type="button" class="settings-modal-btn" id="modal-shell-profile-add">Add Profile</button>
-        <button type="button" class="settings-modal-btn primary close-btn">Done</button>
       </div>
     </div>
   `;
@@ -658,7 +657,6 @@ function openShellProfilesModal() {
   });
 
   overlay.querySelector('.settings-modal-close').addEventListener('click', closeModal);
-  overlay.querySelector('.close-btn').addEventListener('click', closeModal);
 
   // Add profile button
   overlay.querySelector('#modal-shell-profile-add').addEventListener('click', () => {

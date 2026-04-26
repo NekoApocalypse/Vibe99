@@ -240,6 +240,8 @@ const paneOpacityValueEl = document.getElementById('pane-opacity-value');
 const paneMaskOpacityRangeEl = document.getElementById('pane-mask-alpha-range');
 const paneMaskOpacityInputEl = document.getElementById('pane-mask-alpha-input');
 const paneMaskOpacityValueEl = document.getElementById('pane-mask-alpha-value');
+const paneColorPresetsEl = document.getElementById('pane-color-presets');
+const paneColorClearBtn = document.getElementById('pane-color-clear');
 
 const settings = {
   fontSize: 13,
@@ -799,8 +801,9 @@ function createTab(pane, index, focusedIndex, dragMeta) {
   if (dragMeta?.insertBefore) {
     tab.classList.add('insert-before');
   }
-  tab.style.setProperty('--pane-accent', pane.accent);
-  tab.style.setProperty('--tab-text-color', getTextColorForBackground(pane.accent));
+  const accentColor = pane.customColor || pane.accent;
+  tab.style.setProperty('--pane-accent', accentColor);
+  tab.style.setProperty('--tab-text-color', getTextColorForBackground(accentColor));
   tab.dataset.paneId = pane.id;
   tab.addEventListener('contextmenu', (event) => {
     event.preventDefault();
@@ -1371,6 +1374,9 @@ function render(refit = false) {
   if (sessionRestoreComplete) {
     scheduleSettingsSave();
   }
+  if (!settingsPanelEl.classList.contains('is-hidden')) {
+    renderPaneColorPresets();
+  }
 }
 
 function moveFocus(delta) {
@@ -1591,6 +1597,7 @@ async function showTerminalContextMenu(node, event) {
     { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text, shortcut: '⇧⌘V' },
     { label: 'Paste Image', action: 'terminal-paste-image', disabled: !clipboardSnapshot.hasImage },
     { type: 'separator' },
+    { label: 'Change Color...', action: 'terminal-change-color' },
     { label: 'Select All', action: 'terminal-select-all', shortcut: '⌘A' },
   ];
 
@@ -1625,7 +1632,6 @@ function showTabContextMenu(paneId, event) {
   showContextMenu(items, event.clientX, event.clientY, paneId);
 }
 
-<<<<<<< HEAD
 // Preset colors for pane customization (VIB-10)
 const presetPaneColors = [
   '#ff6b57', '#ff9f1c', '#ffd166', '#06d6a0',
@@ -1633,6 +1639,35 @@ const presetPaneColors = [
   '#5cc8ff', '#f4a261', '#e76f51', '#2a9d8f',
   '#e9c46a', '#f4a261', '#264653', '#8d99ae',
 ];
+
+function renderPaneColorPresets() {
+  if (!paneColorPresetsEl) return;
+
+  const focusedPane = panes[getFocusedIndex()];
+  if (!focusedPane) return;
+
+  const currentColor = focusedPane.customColor || focusedPane.accent;
+
+  paneColorPresetsEl.replaceChildren(
+    ...presetPaneColors.map(color => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pane-color-preset-btn';
+      if (color === currentColor) {
+        btn.classList.add('is-selected');
+      }
+      btn.style.setProperty('--color', color);
+      btn.setAttribute('aria-label', `Set pane color to ${color}`);
+      btn.addEventListener('click', () => {
+        setPaneColor(focusedPane.id, color);
+        renderPaneColorPresets();
+      });
+      return btn;
+    })
+  );
+
+  paneColorClearBtn.disabled = !focusedPane.customColor;
+}
 
 function showColorPicker(paneId) {
   hideContextMenu();
@@ -1748,6 +1783,11 @@ function handleMenuAction(action, paneId) {
 
   if (action === 'terminal-select-all') {
     selectAllInTerminal(paneId);
+    return;
+  }
+
+  if (action === 'terminal-change-color') {
+    showColorPicker(paneId);
     return;
   }
 
@@ -1901,6 +1941,7 @@ settingsButtonEl.addEventListener('click', (event) => {
   if (wasHidden) {
     editingShellProfile = null;
     loadShellProfiles();
+    renderPaneColorPresets();
   }
 });
 
@@ -1911,6 +1952,14 @@ settingsPanelEl.addEventListener('click', (event) => {
 shellProfileAddBtn.addEventListener('click', () => {
   editingShellProfile = { id: '', name: '', command: '', args: '' };
   renderShellProfiles();
+});
+
+paneColorClearBtn.addEventListener('click', () => {
+  const focusedPane = panes[getFocusedIndex()];
+  if (focusedPane) {
+    clearPaneColor(focusedPane.id);
+    renderPaneColorPresets();
+  }
 });
 
 fontSizeInputEl.addEventListener('change', () => {

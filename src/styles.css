@@ -830,3 +830,32 @@ body.is-dragging-tabs {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
 }
+
+/* VIB-10: Pane Color Presets in Settings Panel */
+.pane-color-presets {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pane-color-preset-btn {
+  appearance: none;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--color);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+}
+
+.pane-color-preset-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.pane-color-preset-btn.is-selected {
+  border-color: white;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
+}

@@ -1,1 +1,1 @@
-Resizing the window no longer makes background panes pulse. The PTY redraw burst that follows a SIGWINCH was being treated as fresh output; it's now ignored for a short window after each resize.
+Resizing the window no longer makes background panes pulse. The PTY redraw burst that follows a SIGWINCH was being treated as fresh output; it's now ignored until the pane has been silent for a beat, so even heavy multiplexer redraws (zellij, tmux) don't trip the alert.

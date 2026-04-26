@@ -9,8 +9,9 @@
 //   - call `noteData(paneId)` for every chunk of PTY output
 //   - call `noteResize(paneId)` whenever a pane's PTY is resized (window
 //     resize, font-size change, layout change, …) — the SIGWINCH redraw
-//     burst that follows is not "real" new content, and we mute data
-//     notifications for a short window so it doesn't trip the alert.
+//     burst that follows is not "real" new content. Data arriving after
+//     `noteResize` is treated as redraw residue until the pane has been
+//     quiet for `resizeSettleMs`.
 //   - call `setFocus(paneId | null)` whenever the focused pane changes
 //   - call `forget(paneId)` when a pane is destroyed
 //
@@ -28,16 +29,27 @@
 // from their own startup banner.
 
 const DEFAULT_SETTLE_MS = 1500;
-// Window after a resize during which incoming data is treated as redraw
-// residue (SIGWINCH → shell redraw) rather than fresh content. Long enough
-// to cover the redraw of typical TUI apps (vim, htop, tmux) without
-// noticeably delaying genuine post-resize output detection.
-const DEFAULT_RESIZE_QUIET_MS = 800;
+// After a resize, ignore incoming chunks until the pane has been silent
+// for this long. Each chunk that arrives during the window is treated as
+// SIGWINCH redraw residue and extends the window — i.e. we wait for the
+// redraw burst to settle before resuming alert generation.
+//
+// Why "until quiet" rather than a fixed cap? Heavy multiplexers (zellij,
+// tmux) can keep emitting redraw chunks well past any safe fixed cap, and
+// a cap long enough to cover the worst case would feel sluggish on plain
+// shells. An auto-extending window stays tight when the redraw is small
+// and stretches only when the redraw demands it.
+//
+// Trade-off the user signed off on (VIB-29 follow-up): real activity that
+// happens to land inside the post-resize window is dropped. False alerts
+// from zellij/tmux redraws are far more annoying than missing a beat of
+// output that just happened to coincide with a window resize.
+const DEFAULT_RESIZE_SETTLE_MS = 2500;
 
 /**
  * @typedef {object} PaneActivityWatcherOptions
  * @property {number} [settleMs]                — quiet period before alerting (ms).
- * @property {number} [resizeQuietMs]           — window after resize during which data is ignored (ms).
+ * @property {number} [resizeSettleMs]          — silence required to end the post-resize quiet window (ms).
  * @property {boolean} [globalEnabled]          — initial value for the global kill switch.
  * @property {(paneId: string) => void} [onAlert]
  * @property {(paneId: string) => void} [onClear]
@@ -48,11 +60,11 @@ const DEFAULT_RESIZE_QUIET_MS = 800;
  */
 export function createPaneActivityWatcher(options = {}) {
   const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
-  const resizeQuietMs = options.resizeQuietMs ?? DEFAULT_RESIZE_QUIET_MS;
+  const resizeSettleMs = options.resizeSettleMs ?? DEFAULT_RESIZE_SETTLE_MS;
   const onAlert = options.onAlert;
   const onClear = options.onClear;
 
-  // paneId -> { hasBeenFocused, timer, alerted, paneEnabled, resizeQuietUntil }
+  // paneId -> { hasBeenFocused, timer, alerted, paneEnabled, resizeSettleTimer }
   const states = new Map();
   let focusedPaneId = null;
   let globalEnabled = options.globalEnabled ?? true;
@@ -65,7 +77,7 @@ export function createPaneActivityWatcher(options = {}) {
         timer: null,
         alerted: false,
         paneEnabled: true,
-        resizeQuietUntil: 0,
+        resizeSettleTimer: null,
       };
       states.set(paneId, s);
     }
@@ -77,6 +89,10 @@ export function createPaneActivityWatcher(options = {}) {
       clearTimeout(s.timer);
       s.timer = null;
     }
+    if (s.resizeSettleTimer !== null) {
+      clearTimeout(s.resizeSettleTimer);
+      s.resizeSettleTimer = null;
+    }
     if (s.alerted) {
       s.alerted = false;
       onClear?.(paneId);
@@ -85,6 +101,16 @@ export function createPaneActivityWatcher(options = {}) {
 
   function isActive(paneId, s) {
     return globalEnabled && s.paneEnabled;
+  }
+
+  // (Re)start the post-resize silence countdown. Called both from `noteResize`
+  // (to open the window) and from `noteData` while the window is open (to
+  // extend it for the duration of the redraw burst).
+  function armResizeSettle(s) {
+    if (s.resizeSettleTimer !== null) clearTimeout(s.resizeSettleTimer);
+    s.resizeSettleTimer = setTimeout(() => {
+      s.resizeSettleTimer = null;
+    }, resizeSettleMs);
   }
 
   return {
@@ -104,10 +130,14 @@ export function createPaneActivityWatcher(options = {}) {
       if (!s.hasBeenFocused) return;
       if (paneId === focusedPaneId) return;
       if (s.alerted) return;
-      // Within the resize quiet window, treat incoming chunks as SIGWINCH
-      // redraw residue: don't alert, and don't extend any pending timer
-      // — the genuine pre-resize burst (if any) keeps its own timer.
-      if (Date.now() < s.resizeQuietUntil) return;
+      // Inside the post-resize window: this chunk is almost certainly
+      // SIGWINCH redraw residue. Don't fire an alert and don't even start
+      // a settle timer — instead extend the resize window so we keep
+      // ignoring chunks until the redraw burst itself goes silent.
+      if (s.resizeSettleTimer !== null) {
+        armResizeSettle(s);
+        return;
+      }
       if (s.timer !== null) clearTimeout(s.timer);
       s.timer = setTimeout(() => {
         s.timer = null;
@@ -119,14 +149,21 @@ export function createPaneActivityWatcher(options = {}) {
     },
 
     /**
-     * Mark a pane as having just been resized. Opens a brief quiet window
-     * during which `noteData` calls are ignored, since a PTY resize triggers
-     * SIGWINCH and the shell typically responds by redrawing the screen —
-     * not "real" new output the user has missed.
+     * Mark a pane as having just been resized. Opens a quiet window that
+     * stays open as long as redraw chunks keep arriving (each chunk
+     * extends it) and closes once the pane has been silent for
+     * `resizeSettleMs`. Any in-flight content burst is dropped — its
+     * buffer position has been overwritten by the redraw, and we'd rather
+     * lose a beat than fire a false alert when the burst ends inside the
+     * redraw stream.
      */
     noteResize(paneId) {
       const s = ensure(paneId);
-      s.resizeQuietUntil = Date.now() + resizeQuietMs;
+      if (s.timer !== null) {
+        clearTimeout(s.timer);
+        s.timer = null;
+      }
+      armResizeSettle(s);
     },
 
     /** Drop all state for `paneId` (clears any pending timer or alert). */

@@ -106,7 +106,8 @@ body {
 .tab-main,
 .tab-close,
 .tabs-add,
-.tabs-settings {
+.tabs-settings,
+.tabs-fullscreen {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -227,6 +228,25 @@ body {
 .tabs-add:hover,
 .tabs-settings:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.tabs-fullscreen {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 18px;
+}
+
+.tabs-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tabs-fullscreen.is-hidden {
+  display: none;
+}
+
+.tabs-fullscreen.is-fullscreen {
+  color: #ffd166;
 }
 
 .settings-panel {

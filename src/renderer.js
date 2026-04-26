@@ -59,6 +59,20 @@ function splitArgs(str) {
   return args;
 }
 
+// Converts a string array back to a shell-quoted command-line string.
+// This is the inverse of splitArgs(): formatArgs(splitArgs(s)) === s for any s.
+function formatArgs(args) {
+  return args.map((arg) => {
+    // Arguments needing quoting: contain spaces, double quotes, backslashes, or are empty.
+    if (arg === '' || /[\s"]/.test(arg) || /\\/.test(arg)) {
+      // Escape backslashes and double quotes before wrapping in double quotes.
+      const escaped = arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return `"${escaped}"`;
+    }
+    return arg;
+  }).join(' ');
+}
+
 
 function createUnavailableBridge() {
   const fail = () => {
@@ -594,7 +608,7 @@ function renderShellProfiles() {
         id: profile.id,
         name: profile.name || '',
         command: profile.command,
-        args: (profile.args ?? []).join(' '),
+        args: formatArgs(profile.args ?? []),
       };
       renderShellProfiles();
     }));

@@ -393,6 +393,13 @@ let editingShellProfile = null; // null or { id?, name, command, args }
 const shellProfileListEl = document.getElementById('shell-profile-list');
 const shellProfileAddBtn = document.getElementById('shell-profile-add');
 
+// Keyboard shortcuts panel elements
+const shortcutsButtonEl = document.getElementById('tabs-shortcuts');
+const shortcutsPanelEl = document.getElementById('shortcuts-panel');
+const shortcutsPanelCloseEl = document.getElementById('shortcuts-panel-close');
+const shortcutsListEl = document.getElementById('shortcuts-list');
+const shortcutsResetBtn = document.getElementById('shortcuts-reset-btn');
+
 // Batch terminal writes within a single animation frame so that rapid TUI
 // updates (cursor move → clear → rewrite) are parsed as one coherent chunk
 // instead of many tiny fragments that can leave stale cells in the renderer.
@@ -2280,8 +2287,22 @@ window.addEventListener('unhandledrejection', (event) => {
 // Keyboard Shortcuts UI
 // ----------------------------------------------------------------
 
-const shortcutsListEl = document.getElementById('shortcuts-list');
-const shortcutsResetBtn = document.getElementById('shortcuts-reset-btn');
+/**
+ * Toggle shortcuts panel visibility
+ */
+function toggleShortcutsPanel() {
+  shortcutsPanelEl.classList.toggle('is-hidden');
+  if (!shortcutsPanelEl.classList.contains('is-hidden')) {
+    renderShortcutsList();
+  }
+}
+
+/**
+ * Close shortcuts panel
+ */
+function closeShortcutsPanel() {
+  shortcutsPanelEl.classList.add('is-hidden');
+}
 
 /**
  * Get human-readable names for shortcut actions
@@ -2377,6 +2398,7 @@ function startShortcutRecording(shortcutId) {
   const overlay = document.createElement('div');
   overlay.className = 'shortcut-recorder-overlay';
   overlay.id = 'shortcut-recorder-overlay';
+  overlay.tabIndex = -1; // Make it focusable
 
   overlay.innerHTML = `
     <div class="shortcut-recorder-dialog">
@@ -2406,6 +2428,11 @@ function startShortcutRecording(shortcutId) {
     // Handle escape key
     if (event.key === 'Escape') {
       closeShortcutRecorder();
+      return;
+    }
+
+    // Ignore modifier-only keypresses
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) {
       return;
     }
 
@@ -2441,10 +2468,11 @@ function startShortcutRecording(shortcutId) {
     }
   };
 
-  overlay.addEventListener('keydown', keydownHandler, true);
+  // Use window for event capture to ensure we get all keyboard events
+  window.addEventListener('keydown', keydownHandler, true);
 
   const closeShortcutRecorder = () => {
-    document.removeEventListener('keydown', keydownHandler, true);
+    window.removeEventListener('keydown', keydownHandler, true);
     overlay.remove();
   };
 
@@ -2472,7 +2500,8 @@ function startShortcutRecording(shortcutId) {
     }
   });
 
-  // Auto-focus on the overlay
+  // Make overlay focusable and focus it
+  overlay.style.outline = 'none';
   overlay.focus();
 }
 
@@ -2486,6 +2515,18 @@ function resetShortcutsToDefaultsAndSave() {
 }
 
 // Initialize shortcuts UI
+if (shortcutsButtonEl) {
+  shortcutsButtonEl.addEventListener('click', () => {
+    toggleShortcutsPanel();
+  });
+}
+
+if (shortcutsPanelCloseEl) {
+  shortcutsPanelCloseEl.addEventListener('click', () => {
+    closeShortcutsPanel();
+  });
+}
+
 if (shortcutsResetBtn) {
   shortcutsResetBtn.addEventListener('click', () => {
     if (confirm('Reset all keyboard shortcuts to their default values?')) {
@@ -2494,9 +2535,20 @@ if (shortcutsResetBtn) {
   });
 }
 
-// Render shortcuts when settings panel opens
-settingsButtonEl?.addEventListener('click', () => {
-  queueMicrotask(() => {
-    renderShortcutsList();
-  });
+// Close shortcuts panel when clicking outside
+window.addEventListener('pointerdown', (event) => {
+  if (
+    !shortcutsPanelEl.classList.contains('is-hidden') &&
+    !shortcutsPanelEl.contains(event.target) &&
+    !shortcutsButtonEl.contains(event.target)
+  ) {
+    closeShortcutsPanel();
+  }
+});
+
+// Close shortcuts panel on Escape key
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !shortcutsPanelEl.classList.contains('is-hidden')) {
+    closeShortcutsPanel();
+  }
 });

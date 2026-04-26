@@ -16,6 +16,7 @@
         <div class="tabs-actions">
           <button class="tabs-add" id="tabs-add" type="button" aria-label="Add pane">+</button>
           <button class="tabs-fullscreen" id="tabs-fullscreen" type="button" aria-label="Toggle fullscreen">&#9974;</button>
+          <button class="tabs-shortcuts" id="tabs-shortcuts" type="button" aria-label="Keyboard shortcuts">⌨</button>
           <button class="tabs-settings" id="tabs-settings" type="button" aria-label="Open settings">&#9881;</button>
         </div>
         <section class="settings-panel is-hidden" id="settings-panel" aria-label="Settings">
@@ -67,12 +68,16 @@
             </div>
             <div class="shell-profile-list" id="shell-profile-list"></div>
           </div>
+        </section>
 
-          <div class="settings-divider"></div>
-
-          <div class="settings-section">
-            <div class="settings-row">
-              <span>Keyboard Shortcuts</span>
+        <!-- Separate Keyboard Shortcuts Panel -->
+        <section class="shortcuts-panel is-hidden" id="shortcuts-panel" aria-label="Keyboard Shortcuts">
+          <div class="shortcuts-panel-header">
+            <h2>Keyboard Shortcuts</h2>
+            <button class="shortcuts-panel-close" id="shortcuts-panel-close" type="button" aria-label="Close shortcuts">×</button>
+          </div>
+          <div class="shortcuts-panel-content">
+            <div class="shortcuts-actions">
               <button class="settings-btn" id="shortcuts-reset-btn" type="button" title="Reset to defaults">Reset to Defaults</button>
             </div>
             <div class="shortcuts-list" id="shortcuts-list"></div>

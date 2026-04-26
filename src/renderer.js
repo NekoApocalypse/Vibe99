@@ -375,6 +375,8 @@ const paneOpacityValueEl = document.getElementById('pane-opacity-value');
 const paneMaskOpacityRangeEl = document.getElementById('pane-mask-alpha-range');
 const paneMaskOpacityInputEl = document.getElementById('pane-mask-alpha-input');
 const paneMaskOpacityValueEl = document.getElementById('pane-mask-alpha-value');
+const shellProfilesSettingsBtn = document.getElementById('shell-profiles-settings-btn');
+const keyboardShortcutsSettingsBtn = document.getElementById('keyboard-shortcuts-settings-btn');
 
 const settings = {
   fontSize: 13,
@@ -382,7 +384,6 @@ const settings = {
   paneOpacity: 0.8,
   paneMaskOpacity: 0.25,
   paneWidth: 720,
-  shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 let pendingSettingsSave = null;
 
@@ -391,14 +392,6 @@ let defaultShellProfileId = '';
 let editingShellProfile = null; // null or { id?, name, command, args }
 
 const shellProfileListEl = document.getElementById('shell-profile-list');
-const shellProfileAddBtn = document.getElementById('shell-profile-add');
-
-// Keyboard shortcuts panel elements
-const shortcutsButtonEl = document.getElementById('tabs-shortcuts');
-const shortcutsPanelEl = document.getElementById('shortcuts-panel');
-const shortcutsPanelCloseEl = document.getElementById('shortcuts-panel-close');
-const shortcutsListEl = document.getElementById('shortcuts-list');
-const shortcutsResetBtn = document.getElementById('shortcuts-reset-btn');
 
 // Batch terminal writes within a single animation frame so that rapid TUI
 // updates (cursor move → clear → rewrite) are parsed as one coherent chunk
@@ -877,6 +870,234 @@ function changePaneShell(paneId, profileId) {
       scheduleSettingsSave();
     }
   });
+}
+
+// ----------------------------------------------------------------
+// Settings modals for complex settings
+// ----------------------------------------------------------------
+
+function openShellProfilesModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'settings-modal-overlay';
+
+  overlay.innerHTML = `
+    <div class="settings-modal" style="min-width: 360px;">
+      <div class="settings-modal-header">
+        <span>Shell Profiles</span>
+        <button type="button" class="settings-modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-modal-body" style="max-height: 400px; overflow-y: auto;">
+        <div class="shell-profile-list" id="modal-shell-profile-list"></div>
+      </div>
+      <div class="settings-modal-footer">
+        <button type="button" class="settings-modal-btn" id="modal-shell-profile-add">Add Profile</button>
+        <button type="button" class="settings-modal-btn primary close-btn">Done</button>
+      </div>
+    </div>
+  `;
+
+  const closeModal = () => {
+    overlay.remove();
+    editingShellProfile = null; // Reset editing state when closing modal
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  overlay.querySelector('.settings-modal-close').addEventListener('click', closeModal);
+  overlay.querySelector('.close-btn').addEventListener('click', closeModal);
+
+  // Add profile button
+  overlay.querySelector('#modal-shell-profile-add').addEventListener('click', () => {
+    editingShellProfile = { id: '', name: '', command: '', args: '' };
+    renderModalShellProfiles();
+  });
+
+  document.body.appendChild(overlay);
+
+  // Store reference to modal list for rendering
+  overlay._modalShellProfileList = overlay.querySelector('#modal-shell-profile-list');
+
+  renderModalShellProfiles();
+}
+
+function renderModalShellProfiles() {
+  const overlay = document.querySelector('.settings-modal-overlay');
+  if (!overlay || !overlay._modalShellProfileList) return;
+
+  const listEl = overlay._modalShellProfileList;
+  if (!listEl) return;
+
+  listEl.replaceChildren();
+
+  if (editingShellProfile) {
+    listEl.appendChild(createModalShellProfileEditor());
+    return;
+  }
+
+  if (shellProfiles.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'shell-profile-empty';
+    empty.textContent = 'No profiles configured';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  const detectedIds = new Set(detectedShellProfiles.map((p) => p.id));
+
+  for (const profile of shellProfiles) {
+    const isDetected = detectedIds.has(profile.id);
+    const item = document.createElement('div');
+    item.className = `shell-profile-item${profile.id === defaultShellProfileId ? ' is-default' : ''}${isDetected ? ' is-detected' : ''}`;
+
+    const info = document.createElement('div');
+    info.className = 'shell-profile-info';
+
+    const name = document.createElement('div');
+    name.className = 'shell-profile-name';
+    name.textContent = profile.name || profile.id;
+
+    const cmd = document.createElement('div');
+    cmd.className = 'shell-profile-cmd';
+    cmd.textContent = profile.command + (profile.args?.length ? ` ${profile.args.join(' ')}` : '');
+
+    info.append(name, cmd);
+
+    const actions = document.createElement('div');
+    actions.className = 'shell-profile-actions';
+
+    if (profile.id !== defaultShellProfileId) {
+      actions.appendChild(createProfileActionButton('★', 'Set as default', () => {
+        const apply = (config) => {
+          const userIds = new Set((config.profiles ?? []).map((p) => p.id));
+          shellProfiles = [...(config.profiles ?? []), ...detectedShellProfiles.filter((p) => !userIds.has(p.id))];
+          defaultShellProfileId = config.defaultProfile ?? '';
+          renderModalShellProfiles();
+        };
+        if (isDetected) {
+          bridge.addShellProfile(profile).then(() => {
+            bridge.setDefaultShellProfile(profile.id).then(apply).catch(reportError);
+          }).catch(reportError);
+        } else {
+          bridge.setDefaultShellProfile(profile.id).then(apply).catch(reportError);
+        }
+      }));
+    }
+
+    actions.appendChild(createProfileActionButton('✎', 'Edit', () => {
+      editingShellProfile = {
+        id: profile.id,
+        name: profile.name || '',
+        command: profile.command,
+        args: (profile.args ?? []).join(' '),
+      };
+      renderModalShellProfiles();
+    }));
+
+    if (!isDetected) {
+      actions.appendChild(createProfileActionButton('✕', 'Delete', () => {
+        bridge.removeShellProfile(profile.id).then((config) => {
+          const userIds = new Set((config.profiles ?? []).map((p) => p.id));
+          shellProfiles = [...(config.profiles ?? []), ...detectedShellProfiles.filter((p) => !userIds.has(p.id))];
+          defaultShellProfileId = config.defaultProfile ?? '';
+          renderModalShellProfiles();
+        }).catch(reportError);
+      }));
+    }
+
+    item.append(info, actions);
+    listEl.appendChild(item);
+  }
+}
+
+function createModalShellProfileEditor() {
+  const editor = document.createElement('div');
+  editor.className = 'shell-profile-editor';
+
+  const fields = [
+    { key: 'name', label: 'Name (optional)', placeholder: 'e.g. Zsh' },
+    { key: 'id', label: 'ID', placeholder: 'e.g. zsh' },
+    { key: 'command', label: 'Command', placeholder: '/bin/zsh' },
+    { key: 'args', label: 'Arguments', placeholder: '-il' },
+  ];
+
+  const inputs = {};
+  for (const field of fields) {
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    label.setAttribute('for', `modal-shell-edit-${field.key}`);
+
+    const input = document.createElement('input');
+    input.id = `modal-shell-edit-${field.key}`;
+    input.type = 'text';
+    input.value = editingShellProfile[field.key] ?? '';
+    input.placeholder = field.placeholder;
+    input.dataset.field = field.key;
+    inputs[field.key] = input;
+
+    if (field.key === 'name' && !editingShellProfile.id) {
+      input.addEventListener('input', () => {
+        const idInput = inputs.id;
+        if (!idInput.value && input.value.trim()) {
+          idInput.value = input.value.trim().toLowerCase().replace(/\s+/g, '-');
+        }
+      });
+    }
+
+    editor.append(label, input);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'shell-profile-editor-actions';
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'settings-btn';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => {
+    editingShellProfile = null;
+    renderModalShellProfiles();
+  });
+
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'settings-btn is-primary';
+  save.textContent = 'Save';
+  save.addEventListener('click', () => {
+    const profile = {
+      id: inputs.id.value.trim(),
+      name: inputs.name.value.trim(),
+      command: inputs.command.value.trim(),
+      args: splitArgs(inputs.args.value.trim()),
+    };
+
+    if (!profile.id || !profile.command) {
+      reportError(new Error('ID and Command are required'));
+      return;
+    }
+
+    bridge.addShellProfile(profile).then((config) => {
+      const userIds = new Set((config.profiles ?? []).map((p) => p.id));
+      shellProfiles = [...(config.profiles ?? []), ...detectedShellProfiles.filter((p) => !userIds.has(p.id))];
+      defaultShellProfileId = config.defaultProfile ?? '';
+      editingShellProfile = null;
+      renderModalShellProfiles();
+    }).catch(reportError);
+  });
+
+  actions.append(cancel, save);
+  editor.appendChild(actions);
+
+  queueMicrotask(() => {
+    const firstInput = editor.querySelector('input');
+    if (firstInput) {
+      firstInput.focus();
+      firstInput.select();
+    }
+  });
+
+  return editor;
 }
 
 function createTerminalTheme(accent) {
@@ -1766,7 +1987,7 @@ async function showTerminalContextMenu(node, event) {
   if (shellChildren.length > 0) {
     items.push(
       { type: 'separator' },
-      { label: 'Change Shell', children: shellChildren },
+      { label: 'Change Profile', children: shellChildren },
     );
   }
 
@@ -1991,7 +2212,7 @@ function updateStatus() {
 
   statusLabelEl.classList.remove('is-navigation-mode');
   statusLabelEl.textContent = `Focused: ${getPaneLabel(focusedPane) || focusedPane.id}`;
-  statusHintEl.textContent = 'Ctrl+B to enter navigation mode';
+  statusHintEl.textContent = 'Ctrl+B to enter navigation mode'; // Note: this will be updated by keyboard shortcuts
 }
 
 window.addEventListener(
@@ -2069,6 +2290,282 @@ settingsButtonEl.addEventListener('click', (event) => {
   }
 });
 
+// Shell profiles modal button (clickable row)
+shellProfilesSettingsBtn.addEventListener('click', () => {
+  openShellProfilesModal();
+});
+
+shellProfilesSettingsBtn.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    openShellProfilesModal();
+  }
+});
+
+// ----------------------------------------------------------------
+// Keyboard shortcuts modal
+// ----------------------------------------------------------------
+
+/**
+ * Get human-readable names for shortcut actions
+ */
+function getShortcutActionName(actionId) {
+  const names = {
+    'new-tab': 'New Tab',
+    'navigation-mode': 'Navigation Mode',
+    'copy': 'Copy',
+    'paste': 'Paste',
+    'move-left': 'Move Left',
+    'move-right': 'Move Right',
+    'focus-terminal': 'Focus Terminal',
+  };
+  return names[actionId] || actionId;
+}
+
+/**
+ * Get description for shortcut actions
+ */
+function getShortcutActionDescription(actionId) {
+  const descriptions = {
+    'new-tab': 'Create a new terminal pane',
+    'navigation-mode': 'Enter keyboard navigation mode',
+    'copy': 'Copy selected text to clipboard',
+    'paste': 'Paste clipboard content to terminal',
+    'move-left': 'Focus previous pane in navigation mode',
+    'move-right': 'Focus next pane in navigation mode',
+    'focus-terminal': 'Focus the selected terminal',
+  };
+  return descriptions[actionId] || '';
+}
+
+function openKeyboardShortcutsModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'settings-modal-overlay';
+
+  overlay.innerHTML = `
+    <div class="settings-modal" style="min-width: 420px;">
+      <div class="settings-modal-header">
+        <span>Keyboard Shortcuts</span>
+        <button type="button" class="settings-modal-close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-modal-body" style="max-height: 450px; overflow-y: auto;">
+        <div class="shortcuts-list" id="modal-shortcuts-list"></div>
+      </div>
+      <div class="settings-modal-footer">
+        <button type="button" class="settings-modal-btn" id="modal-shortcuts-reset">Reset to Defaults</button>
+        <button type="button" class="settings-modal-btn primary close-btn">Done</button>
+      </div>
+    </div>
+  `;
+
+  const closeModal = () => {
+    overlay.remove();
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  overlay.querySelector('.settings-modal-close').addEventListener('click', closeModal);
+  overlay.querySelector('.close-btn').addEventListener('click', closeModal);
+
+  // Reset shortcuts button
+  overlay.querySelector('#modal-shortcuts-reset').addEventListener('click', () => {
+    if (confirm('Reset all keyboard shortcuts to their default values?')) {
+      resetShortcutsToDefaults();
+      scheduleSettingsSave();
+      renderModalShortcuts();
+    }
+  });
+
+  document.body.appendChild(overlay);
+
+  // Store reference to modal list for rendering
+  overlay._modalShortcutsList = overlay.querySelector('#modal-shortcuts-list');
+
+  renderModalShortcuts();
+}
+
+function renderModalShortcuts() {
+  const overlay = document.querySelector('.settings-modal-overlay');
+  if (!overlay || !overlay._modalShortcutsList) return;
+
+  const listEl = overlay._modalShortcutsList;
+  if (!listEl) return;
+
+  listEl.replaceChildren();
+
+  for (const [id, shortcut] of Object.entries(keyboardShortcuts)) {
+    const item = document.createElement('div');
+    item.className = 'shortcut-item';
+
+    const info = document.createElement('div');
+    info.className = 'shortcut-info';
+
+    const name = document.createElement('div');
+    name.className = 'shortcut-name';
+    name.textContent = getShortcutActionName(id);
+
+    const description = document.createElement('div');
+    description.className = 'shortcut-description';
+    description.textContent = getShortcutActionDescription(id);
+
+    info.append(name, description);
+
+    const binding = document.createElement('div');
+    binding.className = 'shortcut-binding';
+
+    const keys = document.createElement('div');
+    keys.className = 'shortcut-keys';
+    keys.textContent = formatShortcut(shortcut);
+    keys.addEventListener('click', () => {
+      startShortcutRecording(id, () => renderModalShortcuts());
+    });
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'shortcut-edit-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Change shortcut';
+    editBtn.addEventListener('click', () => {
+      startShortcutRecording(id, () => renderModalShortcuts());
+    });
+
+    binding.append(keys, editBtn);
+    item.append(info, binding);
+    listEl.appendChild(item);
+  }
+}
+
+function startShortcutRecording(shortcutId, onRecordComplete) {
+  const shortcut = keyboardShortcuts[shortcutId];
+  if (!shortcut) return;
+
+  // Create recording overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'shortcut-recorder-overlay';
+  overlay.id = 'shortcut-recorder-overlay';
+  overlay.tabIndex = -1; // Make it focusable
+
+  overlay.innerHTML = `
+    <div class="shortcut-recorder-dialog">
+      <div class="shortcut-recorder-title">Record Shortcut</div>
+      <div class="shortcut-recorder-hint">Press your new key combination for "${getShortcutActionName(shortcutId)}"</div>
+      <div class="shortcut-recorder-keys" id="shortcut-recorder-keys">
+        <div class="shortcut-recorder-key">Press keys...</div>
+      </div>
+      <div class="shortcut-recorder-actions">
+        <button type="button" class="shortcut-recorder-btn" id="shortcut-recorder-cancel">Cancel</button>
+        <button type="button" class="shortcut-recorder-btn is-primary" id="shortcut-recorder-save" disabled>Save</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  let recordedShortcut = null;
+  const keysDisplay = overlay.querySelector('#shortcut-recorder-keys');
+  const saveBtn = overlay.querySelector('#shortcut-recorder-save');
+  const cancelBtn = overlay.querySelector('#shortcut-recorder-cancel');
+
+  const keydownHandler = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Handle escape key
+    if (event.key === 'Escape') {
+      closeShortcutRecorder();
+      return;
+    }
+
+    // Ignore modifier-only keypresses
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) {
+      return;
+    }
+
+    // Parse the shortcut
+    const parsed = parseShortcutEvent(event);
+
+    // Update display
+    keysDisplay.innerHTML = '';
+    const modifiers = [...parsed.modifiers, parsed.key];
+    for (const mod of modifiers) {
+      const keyEl = document.createElement('div');
+      keyEl.className = 'shortcut-recorder-key';
+      keyEl.textContent = mod === 'ctrl' ? (bridge.platform === 'darwin' ? '⌘' : 'Ctrl') :
+                         mod === 'shift' ? (bridge.platform === 'darwin' ? '⇧' : 'Shift') :
+                         mod === 'alt' ? (bridge.platform === 'darwin' ? '⌥' : 'Alt') :
+                         mod === ' ' ? 'Space' : mod;
+      keysDisplay.appendChild(keyEl);
+    }
+
+    // Check for conflicts
+    const newShortcut = { key: parsed.key, modifiers: parsed.modifiers };
+    const conflictId = findConflict(newShortcut, shortcutId);
+
+    if (conflictId) {
+      const conflictWarning = document.createElement('div');
+      conflictWarning.className = 'shortcut-conflict-warning';
+      conflictWarning.textContent = `Conflicts with "${getShortcutActionName(conflictId)}"`;
+      keysDisplay.appendChild(conflictWarning);
+      saveBtn.disabled = true;
+    } else {
+      saveBtn.disabled = false;
+      recordedShortcut = newShortcut;
+    }
+  };
+
+  // Use window for event capture to ensure we get all keyboard events
+  window.addEventListener('keydown', keydownHandler, true);
+
+  const closeShortcutRecorder = () => {
+    window.removeEventListener('keydown', keydownHandler, true);
+    overlay.remove();
+  };
+
+  cancelBtn.addEventListener('click', closeShortcutRecorder);
+
+  saveBtn.addEventListener('click', () => {
+    if (recordedShortcut) {
+      // Update the shortcut
+      keyboardShortcuts[shortcutId] = {
+        ...shortcut,
+        key: recordedShortcut.key,
+        modifiers: recordedShortcut.modifiers,
+      };
+
+      // Save and update UI
+      scheduleSettingsSave();
+      if (onRecordComplete) {
+        onRecordComplete();
+      }
+      closeShortcutRecorder();
+    }
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      closeShortcutRecorder();
+    }
+  });
+
+  // Make overlay focusable and focus it
+  overlay.style.outline = 'none';
+  overlay.focus();
+}
+
+// Keyboard shortcuts modal button (clickable row)
+keyboardShortcutsSettingsBtn.addEventListener('click', () => {
+  openKeyboardShortcutsModal();
+});
+
+keyboardShortcutsSettingsBtn.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    openKeyboardShortcutsModal();
+  }
+});
+
 // Fullscreen toggle
 function isFullscreenSupported() {
   return (
@@ -2130,11 +2627,6 @@ hideFullscreenButtonIfUnsupported();
 
 settingsPanelEl.addEventListener('click', (event) => {
   event.stopPropagation();
-});
-
-shellProfileAddBtn.addEventListener('click', () => {
-  editingShellProfile = { id: '', name: '', command: '', args: '' };
-  renderShellProfiles();
 });
 
 fontSizeInputEl.addEventListener('change', () => {
@@ -2281,274 +2773,4 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
   reportError(event.reason);
-});
-
-// ----------------------------------------------------------------
-// Keyboard Shortcuts UI
-// ----------------------------------------------------------------
-
-/**
- * Toggle shortcuts panel visibility
- */
-function toggleShortcutsPanel() {
-  shortcutsPanelEl.classList.toggle('is-hidden');
-  if (!shortcutsPanelEl.classList.contains('is-hidden')) {
-    renderShortcutsList();
-  }
-}
-
-/**
- * Close shortcuts panel
- */
-function closeShortcutsPanel() {
-  shortcutsPanelEl.classList.add('is-hidden');
-}
-
-/**
- * Get human-readable names for shortcut actions
- */
-function getShortcutActionName(actionId) {
-  const names = {
-    'new-tab': 'New Tab',
-    'navigation-mode': 'Navigation Mode',
-    'copy': 'Copy',
-    'paste': 'Paste',
-    'move-left': 'Move Left',
-    'move-right': 'Move Right',
-    'focus-terminal': 'Focus Terminal',
-  };
-  return names[actionId] || actionId;
-}
-
-/**
- * Get description for shortcut actions
- */
-function getShortcutActionDescription(actionId) {
-  const descriptions = {
-    'new-tab': 'Create a new terminal pane',
-    'navigation-mode': 'Enter keyboard navigation mode',
-    'copy': 'Copy selected text to clipboard',
-    'paste': 'Paste clipboard content to terminal',
-    'move-left': 'Focus previous pane in navigation mode',
-    'move-right': 'Focus next pane in navigation mode',
-    'focus-terminal': 'Focus the selected terminal',
-  };
-  return descriptions[actionId] || '';
-}
-
-/**
- * Render the keyboard shortcuts list
- */
-function renderShortcutsList() {
-  if (!shortcutsListEl) return;
-
-  shortcutsListEl.replaceChildren();
-
-  for (const [id, shortcut] of Object.entries(keyboardShortcuts)) {
-    const item = document.createElement('div');
-    item.className = 'shortcut-item';
-    item.dataset.shortcutId = id;
-
-    const info = document.createElement('div');
-    info.className = 'shortcut-info';
-
-    const name = document.createElement('div');
-    name.className = 'shortcut-name';
-    name.textContent = getShortcutActionName(id);
-
-    const description = document.createElement('div');
-    description.className = 'shortcut-description';
-    description.textContent = getShortcutActionDescription(id);
-
-    info.append(name, description);
-
-    const binding = document.createElement('div');
-    binding.className = 'shortcut-binding';
-
-    const keys = document.createElement('div');
-    keys.className = 'shortcut-keys';
-    keys.textContent = formatShortcut(shortcut);
-    keys.addEventListener('click', () => {
-      startShortcutRecording(id);
-    });
-
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'shortcut-edit-btn';
-    editBtn.textContent = '✎';
-    editBtn.title = 'Change shortcut';
-    editBtn.addEventListener('click', () => {
-      startShortcutRecording(id);
-    });
-
-    binding.append(keys, editBtn);
-    item.append(info, binding);
-    shortcutsListEl.appendChild(item);
-  }
-}
-
-/**
- * Start recording a new keyboard shortcut
- */
-function startShortcutRecording(shortcutId) {
-  const shortcut = keyboardShortcuts[shortcutId];
-  if (!shortcut) return;
-
-  // Create recording overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'shortcut-recorder-overlay';
-  overlay.id = 'shortcut-recorder-overlay';
-  overlay.tabIndex = -1; // Make it focusable
-
-  overlay.innerHTML = `
-    <div class="shortcut-recorder-dialog">
-      <div class="shortcut-recorder-title">Record Shortcut</div>
-      <div class="shortcut-recorder-hint">Press your new key combination for "${getShortcutActionName(shortcutId)}"</div>
-      <div class="shortcut-recorder-keys" id="shortcut-recorder-keys">
-        <div class="shortcut-recorder-key">Press keys...</div>
-      </div>
-      <div class="shortcut-recorder-actions">
-        <button type="button" class="shortcut-recorder-btn" id="shortcut-recorder-cancel">Cancel</button>
-        <button type="button" class="shortcut-recorder-btn is-primary" id="shortcut-recorder-save" disabled>Save</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  let recordedShortcut = null;
-  const keysDisplay = overlay.querySelector('#shortcut-recorder-keys');
-  const saveBtn = overlay.querySelector('#shortcut-recorder-save');
-  const cancelBtn = overlay.querySelector('#shortcut-recorder-cancel');
-
-  const keydownHandler = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    // Handle escape key
-    if (event.key === 'Escape') {
-      closeShortcutRecorder();
-      return;
-    }
-
-    // Ignore modifier-only keypresses
-    if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) {
-      return;
-    }
-
-    // Parse the shortcut
-    const parsed = parseShortcutEvent(event);
-
-    // Update display
-    keysDisplay.innerHTML = '';
-    const modifiers = [...parsed.modifiers, parsed.key];
-    for (const mod of modifiers) {
-      const keyEl = document.createElement('div');
-      keyEl.className = 'shortcut-recorder-key';
-      keyEl.textContent = mod === 'ctrl' ? (bridge.platform === 'darwin' ? '⌘' : 'Ctrl') :
-                         mod === 'shift' ? (bridge.platform === 'darwin' ? '⇧' : 'Shift') :
-                         mod === 'alt' ? (bridge.platform === 'darwin' ? '⌥' : 'Alt') :
-                         mod === ' ' ? 'Space' : mod;
-      keysDisplay.appendChild(keyEl);
-    }
-
-    // Check for conflicts
-    const newShortcut = { key: parsed.key, modifiers: parsed.modifiers };
-    const conflictId = findConflict(newShortcut, shortcutId);
-
-    if (conflictId) {
-      const conflictWarning = document.createElement('div');
-      conflictWarning.className = 'shortcut-conflict-warning';
-      conflictWarning.textContent = `Conflicts with "${getShortcutActionName(conflictId)}"`;
-      keysDisplay.appendChild(conflictWarning);
-      saveBtn.disabled = true;
-    } else {
-      saveBtn.disabled = false;
-      recordedShortcut = newShortcut;
-    }
-  };
-
-  // Use window for event capture to ensure we get all keyboard events
-  window.addEventListener('keydown', keydownHandler, true);
-
-  const closeShortcutRecorder = () => {
-    window.removeEventListener('keydown', keydownHandler, true);
-    overlay.remove();
-  };
-
-  cancelBtn.addEventListener('click', closeShortcutRecorder);
-
-  saveBtn.addEventListener('click', () => {
-    if (recordedShortcut) {
-      // Update the shortcut
-      keyboardShortcuts[shortcutId] = {
-        ...shortcut,
-        key: recordedShortcut.key,
-        modifiers: recordedShortcut.modifiers,
-      };
-
-      // Save and update UI
-      scheduleSettingsSave();
-      renderShortcutsList();
-      closeShortcutRecorder();
-    }
-  });
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      closeShortcutRecorder();
-    }
-  });
-
-  // Make overlay focusable and focus it
-  overlay.style.outline = 'none';
-  overlay.focus();
-}
-
-/**
- * Reset shortcuts to defaults
- */
-function resetShortcutsToDefaultsAndSave() {
-  resetShortcutsToDefaults();
-  scheduleSettingsSave();
-  renderShortcutsList();
-}
-
-// Initialize shortcuts UI
-if (shortcutsButtonEl) {
-  shortcutsButtonEl.addEventListener('click', () => {
-    toggleShortcutsPanel();
-  });
-}
-
-if (shortcutsPanelCloseEl) {
-  shortcutsPanelCloseEl.addEventListener('click', () => {
-    closeShortcutsPanel();
-  });
-}
-
-if (shortcutsResetBtn) {
-  shortcutsResetBtn.addEventListener('click', () => {
-    if (confirm('Reset all keyboard shortcuts to their default values?')) {
-      resetShortcutsToDefaultsAndSave();
-    }
-  });
-}
-
-// Close shortcuts panel when clicking outside
-window.addEventListener('pointerdown', (event) => {
-  if (
-    !shortcutsPanelEl.classList.contains('is-hidden') &&
-    !shortcutsPanelEl.contains(event.target) &&
-    !shortcutsButtonEl.contains(event.target)
-  ) {
-    closeShortcutsPanel();
-  }
-});
-
-// Close shortcuts panel on Escape key
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !shortcutsPanelEl.classList.contains('is-hidden')) {
-    closeShortcutsPanel();
-  }
 });

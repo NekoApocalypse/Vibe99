@@ -1051,6 +1051,20 @@ function createPane(pane) {
     ) {
       return false;
     }
+    // Ctrl+Shift+C/V are reserved for copy/paste — handled by the
+    // window-level shortcut handler. Returning false here prevents xterm
+    // from consuming the event so it can bubble up and preventDefault()
+    // runs before the WebView intercepts it for DevTools/Carets.
+    if (
+      event.type === 'keydown' &&
+      event.ctrlKey &&
+      event.shiftKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      (event.key === 'C' || event.key === 'c' || event.key === 'V' || event.key === 'v')
+    ) {
+      return false;
+    }
     if (!isWindowsCtrlVPasteHotkey(event)) {
       return true;
     }

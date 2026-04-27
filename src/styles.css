@@ -211,7 +211,8 @@ body {
 }
 
 .tabs-add,
-.tabs-settings {
+.tabs-settings,
+.tabs-fullscreen {
   width: 34px;
   height: 33px;
   flex: 0 0 auto;
@@ -219,38 +220,19 @@ body {
   background: rgba(255, 255, 255, 0.02);
   color: rgba(255, 255, 255, 0.82);
   font-size: 18px;
-  line-height: 1;
-  vertical-align: middle;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
+  line-height: 33px;
+  text-align: center;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .tabs-add:hover,
-.tabs-settings:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.tabs-fullscreen {
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 18px;
-  line-height: 1;
-  vertical-align: middle;
-}
-
+.tabs-settings:hover,
 .tabs-fullscreen:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.tabs-fullscreen.is-hidden {
-  display: none;
-}
-
-.tabs-fullscreen.is-fullscreen {
-  color: #ffd166;
-}
+.tabs-fullscreen.is-hidden { display: none; }
+.tabs-fullscreen.is-fullscreen { color: #ffd166; }
 
 .settings-panel {
   position: absolute;

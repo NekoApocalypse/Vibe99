@@ -1606,8 +1606,7 @@ function navigateLeft() {
   const nextIndex = focusedIndex - 1;
 
   if (nextIndex >= 0) {
-    focusedPaneId = panes[nextIndex].id;
-    render();
+    focusPane(panes[nextIndex].id);
   }
 }
 
@@ -1620,8 +1619,7 @@ function navigateRight() {
   const nextIndex = focusedIndex + 1;
 
   if (nextIndex < panes.length) {
-    focusedPaneId = panes[nextIndex].id;
-    render();
+    focusPane(panes[nextIndex].id);
   }
 }
 

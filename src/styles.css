@@ -630,12 +630,9 @@ body {
 }
 
 .status-hint {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   color: rgba(255, 255, 255, 0.45);
   white-space: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 
 /* Hint bar styles */

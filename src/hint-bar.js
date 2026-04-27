@@ -33,10 +33,9 @@ export function renderHintBar(keymap, currentMode, focusedPaneLabel, isMinimal =
     }
   }
 
-  // For nav mode, show all hints in keymap order (no reordering needed)
+  // For nav mode, merge entries with same action and show hints directly
   if (currentMode === 'nav') {
-    // Keep all entries with hints, maintain original keymap order
-    entries = entries.filter(entry => entry.hint);
+    entries = mergeNavModeHints(entries);
   }
 
   // Show at most 6 items; only show entries with hint text
@@ -51,14 +50,8 @@ export function renderHintBar(keymap, currentMode, focusedPaneLabel, isMinimal =
     // Normal mode: show all hints
     hintsHtml = visible
       .map(entry => {
-        // For nav mode, parse hint to separate key and description
+        // For nav mode, hint is already in display format
         if (currentMode === 'nav' && entry.mode === 'nav') {
-          const parts = entry.hint.split(' ');
-          if (parts.length >= 2) {
-            const key = parts[0];
-            const desc = parts.slice(1).join(' ');
-            return `<span class="hint"><kbd>${key}</kbd> ${desc}</span>`;
-          }
           return `<span class="hint">${entry.hint}</span>`;
         }
         const chord = formatChordForHint(entry.chord, platform);
@@ -76,6 +69,64 @@ export function renderHintBar(keymap, currentMode, focusedPaneLabel, isMinimal =
   }
 
   return { modeLabel, hintsHtml };
+}
+
+/**
+ * Merge nav mode hints that have the same action.
+ * For example, 'h prev' and '← prev' become 'h/← prev'.
+ */
+function mergeNavModeHints(entries) {
+  const actionMap = new Map();
+
+  for (const entry of entries) {
+    if (!entry.hint) continue;
+
+    const parts = entry.hint.split(' ');
+    if (parts.length < 2) {
+      // Keep as-is if hint doesn't have key + description format
+      if (!actionMap.has(entry.action)) {
+        actionMap.set(entry.action, { ...entry, keys: [] });
+      }
+      continue;
+    }
+
+    const key = parts[0];
+    const desc = parts.slice(1).join(' ');
+
+    if (!actionMap.has(entry.action)) {
+      actionMap.set(entry.action, { ...entry, keys: [key], description: desc });
+    } else {
+      const existing = actionMap.get(entry.action);
+      existing.keys.push(key);
+    }
+  }
+
+  // Rebuild entries with merged hints
+  const merged = [];
+  for (const [action, data] of actionMap) {
+    if (data.keys.length > 0) {
+      // Merge keys with '/' separator
+      data.hint = `${data.keys.join('/')} ${data.description}`;
+    }
+    delete data.keys;
+    delete data.description;
+    merged.push(data);
+  }
+
+  // Keep original order (first occurrence of each action)
+  const ordered = [];
+  const seenActions = new Set();
+  for (const entry of entries) {
+    if (!entry.hint || !entry.action) continue;
+    if (seenActions.has(entry.action)) continue;
+    seenActions.add(entry.action);
+    const mergedEntry = merged.find(e => e.action === entry.action);
+    if (mergedEntry) {
+      ordered.push(mergedEntry);
+    }
+  }
+
+  return ordered;
 }
 
 /**

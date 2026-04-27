@@ -376,26 +376,29 @@ body {
 }
 
 .shell-profile-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .shell-profile-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 0 10px;
+  height: 36px;
   border-radius: 4px;
   background: transparent;
   cursor: grab;
   transition: all 120ms ease;
   border: 1px solid transparent;
   user-select: none;
+  min-width: 0;
 }
 
 .shell-profile-item:hover {
@@ -427,7 +430,6 @@ body {
 .shell-profile-item .shell-profile-name {
   flex: 1;
   min-width: 0;
-  max-width: calc(100% - 80px);
   font-size: 13px;
   color: var(--text);
   white-space: nowrap;

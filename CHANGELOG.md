@@ -10,7 +10,7 @@
 - Added `Ctrl+Tab` to cycle to the most recently visited pane (browser-style). Hold `Ctrl` and press `Tab` again to step further back through pane history; add `Shift` to cycle in reverse.
 - Added a color overlay on background panes to make foreground/background distinction obvious without dimming the terminal text; mask color and alpha are configurable in settings.
 - Added font family selection in settings, allowing users to pick any installed monospace font.
-- GitHub releases now publish both the Windows portable executable and a Windows zip archive alongside the Linux release artifacts.
+- GitHub releases now publish Windows MSI and setup EXE artifacts alongside Linux RPM, AppImage, and DEB artifacts.
 - Keyboard Shortcuts UI improvements (VIB-43):
 
   - Nav-mode shortcuts now display a "Nav" badge in the settings modal,

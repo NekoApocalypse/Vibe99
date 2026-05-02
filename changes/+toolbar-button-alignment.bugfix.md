@@ -1,1 +1,0 @@
-Fixed toolbar settings button (gear icon) being visually lower than the other toolbar buttons (+tab, fullscreen). Changed `.tabs-actions` from `align-items: stretch` to `align-items: center`, and added `vertical-align: middle` + `line-height: 1` to all three icon buttons for consistent vertical alignment.

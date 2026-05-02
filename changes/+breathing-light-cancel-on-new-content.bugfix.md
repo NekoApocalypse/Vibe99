@@ -1,1 +1,0 @@
-Breathing light now cancels and restarts when new content arrives after the alert has fired. Resize-induced redraws still don't cancel the alert (consistent with VIB-29's resize quiet logic), so only genuine new content can dismiss the breathing animation.

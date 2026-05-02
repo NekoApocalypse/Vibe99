@@ -1,1 +1,0 @@
-CJK characters now consume two cells in the terminal grid, matching what modern CLI apps (Claude Code, Ink-based UIs) assume. Lines with Chinese, Japanese, or Korean input no longer drift left when the app redraws after IME composition.

@@ -1,1 +1,0 @@
-When a backgrounded pane has settled output you haven't seen yet, the mask now pulses with a brighter accent-tinted breathing glow that stays readable at any "BG mask opacity" value, and switching back to the pane stops it immediately. You can disable the alert globally from Settings → "Background activity alert", or per-pane via the tab context menu.

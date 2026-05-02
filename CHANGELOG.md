@@ -2,24 +2,56 @@
 
 <!-- towncrier release notes start -->
 
-## [Unreleased]
+## 0.7.2 - 2026-05-02
 
 ### Added
 
-- Navigation mode enhancements (VIB-33):
-  - Number shortcuts (1-9) for jumping to specific panes
-  - Home/End keys for jumping to first/last pane
-  - Editing actions: n (new pane), x (close pane), r (rename pane)
-  - Help system with ? key to open keyboard shortcuts modal
-  - Two-step close confirmation with visual feedback
-  - Number badges in tabs during navigation mode
-  - Proper focus management (exit nav mode after close/rename, return focus to terminal)
+- Added Ctrl+Left Arrow and Ctrl+Right Arrow shortcuts to switch between adjacent panes by spatial position. These shortcuts stop at boundaries (no cycling), complementing the existing cycling navigation.
+- Added `Ctrl+Tab` to cycle to the most recently visited pane (browser-style). Hold `Ctrl` and press `Tab` again to step further back through pane history; add `Shift` to cycle in reverse.
+- Added a color overlay on background panes to make foreground/background distinction obvious without dimming the terminal text; mask color and alpha are configurable in settings.
+- Added font family selection in settings, allowing users to pick any installed monospace font.
+- GitHub releases now publish both the Windows portable executable and a Windows zip archive alongside the Linux release artifacts.
+- Keyboard Shortcuts UI improvements (VIB-43):
 
-## 0.7.2 - 2026-04-27
+  - Nav-mode shortcuts now display a "Nav" badge in the settings modal,
+    making it clear they only work in navigation mode.
+  - Fixed case display: single-letter keys (h, l, n, x, r) now show
+    lowercase as intended, instead of uppercase (H, L, N, X, R).
+  - Added missing action names and descriptions for all nav-mode
+    customizable shortcuts (focus-first, focus-last, new-pane,
+    close-pane, rename-pane).
+  - Hidden non-customizable "jump-to" (1-9) shortcut from the settings
+    modal, as digit-range bindings cannot be remapped.
+  - Fixed close-pane shortcut: changed from `c` to `x` to match the
+    intended navigation-mode key binding documented in the changelog.
+- Navigation mode now displays mode-specific keyboard hints in the status bar. Press `Esc` to exit navigation mode and return focus to the source pane.
+- Navigation mode now supports direct pane jumps with number keys, Home/End navigation, pane creation/close/rename actions, an in-app shortcuts help modal, close confirmation, numbered tab badges, and cleaner focus restoration when leaving navigation mode (VIB-33).
+- Press Ctrl+Shift+O (Cmd+Shift+O on macOS) to open a command palette and jump to any pane by fuzzy-matching its tab title — arrow keys to move, Enter to focus, Esc to dismiss.
+- Redesigned the shell profiles editor with a two-column profile list and editor, profile cloning, drag-and-drop ordering, clearer selected/drag/hover states, and compact sidebar controls while removing the redundant outer modal footer actions (VIB-36).
+- Replaced the pane default color palette with Okabe-Ito-based divergent colors so adjacent panes are visually distinct across the full hue circle, with alternating luminance for stronger separation (VIB-41).
+- Rewrote the app with Tauri 2 (Rust backend + vanilla JS frontend), replacing the previous Electron stack. The app now launches faster, uses significantly less memory, and produces native installers (.msi/.exe on Windows, .deb/.AppImage on Linux).
+- Session state (pane layout, directories, shell profiles, tab titles) is now restored on app restart.
+- Shell profiles are fully editable: users can create, modify, and switch profiles per pane via the right-click context menu. All profiles (auto-detected and user-created) support editing.
+- Terminal rendering now uses the WebGL renderer for crisp, properly aligned box-drawing characters and better performance.
+- WSL integration now auto-detects all installed distributions and creates a shell profile for each one. Distribution names are correctly decoded from UTF-16LE output.
+- When a backgrounded pane has settled output you haven't seen yet, the mask now pulses with a brighter accent-tinted breathing glow that stays readable at any "BG mask opacity" value, and switching back to the pane stops it immediately. You can disable the alert globally from Settings → "Background activity alert", or per-pane via the tab context menu.
 
-### Improved
+### Fixed
 
-- Replaced pane default color palette with Okabe-Ito-based divergent colors (VIB-41). Adjacent colors are now visually distinct across the full hue circle, with alternating luminance for stronger separation. Covers accentPalette, presetPaneColors, and initialPanes.
+- Breathing light now cancels and restarts when new content arrives after the alert has fired. Resize-induced redraws still don't cancel the alert (consistent with VIB-29's resize quiet logic), so only genuine new content can dismiss the breathing animation.
+- CJK characters now consume two cells in the terminal grid, matching what modern CLI apps (Claude Code, Ink-based UIs) assume. Lines with Chinese, Japanese, or Korean input no longer drift left when the app redraws after IME composition.
+- Fixed toolbar settings button (gear icon) being visually lower than the other toolbar buttons (+tab, fullscreen). Changed `.tabs-actions` from `align-items: stretch` to `align-items: center`, and added `vertical-align: middle` + `line-height: 1` to all three icon buttons for consistent vertical alignment.
+- Removed dead shell profile rendering code that was left after VIB-14 moved shell profiles to modal dialogs. The code referenced a non-existent `shell-profile-list` DOM element and was never called.
+- Resizing the window no longer makes background panes pulse. The PTY redraw burst that follows a SIGWINCH was being treated as fresh output; it's now ignored until the pane has been silent for a beat, so even heavy multiplexer redraws (zellij, tmux) don't trip the alert.
+
+### Documentation
+
+- README Controls table now matches the actual key bindings: new pane is `Ctrl+N` (not `Ctrl+T`), and the command palette and copy/paste shortcuts are listed.
+
+### Misc
+
+- Added `scripts/bump-version.mjs` to synchronize version numbers across package.json, tauri.conf.json, and Cargo.toml from a single command.
+
 
 ## 0.7.1 - 2026-04-26
 

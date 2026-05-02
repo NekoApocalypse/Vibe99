@@ -1,1 +1,0 @@
-Added Ctrl+Left Arrow and Ctrl+Right Arrow shortcuts to switch between adjacent panes by spatial position. These shortcuts stop at boundaries (no cycling), complementing the existing cycling navigation.

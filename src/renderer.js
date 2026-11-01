@@ -20,6 +20,7 @@ import { createDispatcher } from './input/dispatcher.js';
 import { renderHintBar } from './hint-bar.js';
 import { createTerminalOutput } from './terminal-output.mjs';
 import { encodeTerminalInput, RESET_MOUSE_MODES } from './terminal-input.mjs';
+import projectDefaults from './default-settings.json';
 
 function getRuntimePlatform() {
   const platform = navigator.platform.toLowerCase();
@@ -34,12 +35,12 @@ function getRuntimePlatform() {
 
 function getDefaultFontFamily(platform = getRuntimePlatform()) {
   if (platform === 'win32' || platform === 'windows') {
-    return 'Consolas, "Cascadia Mono", "Courier New", monospace';
+    return projectDefaults.fontFamilies.windows;
   }
   if (platform === 'darwin') {
-    return 'Menlo, Monaco, "SF Mono", monospace';
+    return projectDefaults.fontFamilies.macos;
   }
-  return '"DejaVu Sans Mono", "Liberation Mono", "Ubuntu Mono", monospace';
+  return projectDefaults.fontFamilies.linux;
 }
 
 function basename(path) {
@@ -213,36 +214,20 @@ const bridge = window.__TAURI__
   ? createTauriBridge(window.__TAURI__)
   : window.vibe99 ?? createUnavailableBridge();
 
-const initialPanes = [
+const initialPanes = Array.from({ length: projectDefaults.startup.paneCount }, (_, index) => (
   {
-    id: 'p1',
+    id: `p${index + 1}`,
     title: null,
     terminalTitle: bridge.defaultTabTitle,
     cwd: bridge.defaultCwd,
-    accent: ColorsRegistry.ACCENT_PALETTE[0],
+    accent: ColorsRegistry.ACCENT_PALETTE[index % ColorsRegistry.ACCENT_PALETTE.length],
     shellProfileId: null,
-  },
-  {
-    id: 'p2',
-    title: null,
-    terminalTitle: bridge.defaultTabTitle,
-    cwd: bridge.defaultCwd,
-    accent: ColorsRegistry.ACCENT_PALETTE[1],
-    shellProfileId: null,
-  },
-  {
-    id: 'p3',
-    title: null,
-    terminalTitle: bridge.defaultTabTitle,
-    cwd: bridge.defaultCwd,
-    accent: ColorsRegistry.ACCENT_PALETTE[2],
-    shellProfileId: null,
-  },
-];
+  }
+));
 
 
 let panes = initialPanes.map((pane) => ({ ...pane }));
-let focusedPaneId = panes[0].id;
+let focusedPaneId = panes[projectDefaults.startup.focusedPaneIndex]?.id ?? panes[0].id;
 let nextPaneNumber = panes.length + 1;
 let renamingPaneId = null;
 let isRenderingTabs = false; // Guard against re-entrant renderTabs calls
@@ -263,7 +248,7 @@ function setMode(next) {
 // Most-recently-used pane stack for Ctrl+` cycling. Index 0 is the most
 // recently visited pane (typically equals focusedPaneId when no cycle is in
 // progress). All current pane IDs always appear exactly once.
-let paneMruOrder = panes.map((pane) => pane.id);
+let paneMruOrder = [focusedPaneId, ...panes.filter(pane => pane.id !== focusedPaneId).map(pane => pane.id)];
 
 // Transient state while the user is cycling with the modifier still held.
 // `snapshot` freezes the MRU order at the start of the cycle so repeated
@@ -316,12 +301,8 @@ const shellProfilesSettingsBtn = document.getElementById('shell-profiles-setting
 const keyboardShortcutsSettingsBtn = document.getElementById('keyboard-shortcuts-settings-btn');
 
 const settings = {
-  fontSize: 13,
+  ...projectDefaults.ui,
   fontFamily: getDefaultFontFamily(bridge.platform),
-  paneOpacity: 0.8,
-  paneMaskOpacity: 0.75,
-  paneWidth: 720,
-  breathingAlertEnabled: true,
 };
 let pendingSettingsSave = null;
 
@@ -532,7 +513,7 @@ function restoreSession(session) {
       cwd: bridge.defaultCwd,
       terminalTitle: bridge.defaultTabTitle,
     }));
-    focusedPaneId = panes[0].id;
+    focusedPaneId = panes[projectDefaults.startup.focusedPaneIndex]?.id ?? panes[0].id;
     nextPaneNumber = panes.length + 1;
     paneMruOrder = panes.map((p) => p.id);
     paneCycleState = null;

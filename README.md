@@ -99,6 +99,7 @@ Compare runs on the same machine; these timings are diagnostics, not CI limits.
 
 ## Platform Defaults And Known Issues
 
+- Shared project defaults live in `src/default-settings.json`: 16 px text, 1210 px panes, 70% pane opacity, a 3% background mask, activity alerts off, and four starting panes. Review builds use the same defaults with a separate settings identity. Existing user preferences take precedence.
 - Terminal font defaults are platform-aware: `Consolas` on Windows, `Menlo` on macOS, and `DejaVu Sans Mono` on Linux.
 - WSL integration is available on Windows and is a no-op on macOS/Linux.
 - Known issue: the native macOS title bar can remain light while the system is in dark mode. See [issue #28](https://github.com/NekoApocalypse/Vibe99/issues/28).

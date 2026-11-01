@@ -32,14 +32,16 @@ const { setTimeout: delay } = require('node:timers/promises');
         platform: 'win32', defaultCwd: 'C:/benchmark', defaultTabTitle: 'benchmark', cwdReady: Promise.resolve(),
         createTerminal: async () => {}, writeTerminal: async () => {}, acknowledgeTerminal: async () => {},
         resizeTerminal: async () => {}, destroyTerminal: async () => {}, closeWindow: async () => {},
-        loadSettings: async () => ({}), saveSettings: async () => ({}),
+        // Pin appearance so changing project defaults does not change the benchmark workload.
+        loadSettings: async () => ({ version: 4, ui: { fontSize: 13, paneWidth: 720,
+          paneOpacity: 0.8, paneMaskOpacity: 0.75, breathingAlertEnabled: true } }), saveSettings: async () => ({}),
         listShellProfiles: async () => ({ profiles: [], defaultProfile: '' }), detectShellProfiles: async () => [],
         writeClipboardText: async () => {}, readClipboardText: async () => '',
         onTerminalData: () => () => {}, onTerminalExit: () => () => {}, onMenuAction: () => () => {},
       };
     });
     await page.goto('http://127.0.0.1:1422');
-    await page.waitForFunction(() => window.__perf?.paneNodeMap.size === 3);
+    await page.waitForFunction(() => window.__perf?.paneNodeMap.size >= 3);
     await page.evaluate(() => { while (window.__perf.getPanes().length < 8) window.__perf.addPane(); });
     await page.waitForFunction(() => [...window.__perf.paneNodeMap.values()].every(n => n.sessionReady));
     await page.evaluate(async () => {

@@ -1,0 +1,19 @@
+{
+  "ui": {
+    "fontSize": 16,
+    "paneWidth": 1210,
+    "paneOpacity": 0.7,
+    "paneMaskOpacity": 0.03,
+    "breathingAlertEnabled": false,
+    "shortcuts": {}
+  },
+  "fontFamilies": {
+    "windows": "Consolas, \"Cascadia Mono\", \"Courier New\", monospace",
+    "macos": "Menlo, Monaco, \"SF Mono\", monospace",
+    "linux": "\"DejaVu Sans Mono\", \"Liberation Mono\", \"Ubuntu Mono\", monospace"
+  },
+  "startup": {
+    "paneCount": 4,
+    "focusedPaneIndex": 2
+  }
+}

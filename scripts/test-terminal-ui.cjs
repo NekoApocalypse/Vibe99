@@ -40,7 +40,10 @@ const assert = require('node:assert/strict');
         writeTerminal: async p => window.__writes.push(p),
         acknowledgeTerminal: async p => window.__acks.push(p),
         resizeTerminal: async p => window.__resizes.push(p), destroyTerminal: async () => {}, closeWindow: async () => {},
-        loadSettings: async () => ({}), saveSettings: async () => ({}),
+        loadSettings: async () => ({ version: 4, session: {
+          panes: ['#9b5de5', '#ef476f', '#fdab0f'].map(accent => ({ accent, cwd: 'C:/test' })),
+          focusedPaneIndex: 0,
+        } }), saveSettings: async () => ({}),
         listShellProfiles: async () => ({ profiles: [], defaultProfile: '' }), detectShellProfiles: async () => [],
         detectWslProfiles: () => { window.__discoveryCalls++; return new Promise((resolve, reject) => { window.__finishDiscovery = resolve; window.__failDiscovery = reject; }); },
         addShellProfile: async () => ({}),
@@ -273,10 +276,15 @@ const assert = require('node:assert/strict');
       window.vibe99.loadSettings = async () => { throw Error('Simulated unreadable settings'); };
     });
     await page.reload();
-    await page.waitForFunction(() => window.__sessions.size === 3);
+    await page.waitForFunction(() => window.__sessions.size === 4);
+    assert.equal(await page.locator('#font-size-input').inputValue(), '16');
+    assert.equal(await page.locator('#pane-width-input').inputValue(), '1210');
+    assert.equal(Number(await page.locator('#pane-opacity-input').inputValue()), 0.7);
+    assert.equal(Number(await page.locator('#pane-mask-alpha-input').inputValue()), 0.03);
+    assert(!(await page.locator('#breathing-alert-toggle').isChecked()));
     await page.locator('#tabs-settings').click();
     assert(await page.locator('#settings-panel').isVisible());
-    console.log('PASS: unreadable settings still allow default terminals and settings controls');
+    console.log('PASS: unreadable settings use the author’s defaults, four panes and working controls');
   } finally {
     await browser?.close();
     await server.close();

@@ -2,7 +2,9 @@
 // Usage: node scripts/test-native-terminal.cjs <path-to-review-exe>
 const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
-const { resolve } = require('node:path');
+const { resolve, join, dirname, basename } = require('node:path');
+const { mkdtempSync, realpathSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
 const { setTimeout: delay } = require('node:timers/promises');
 const assert = require('node:assert/strict');
 const { execFile } = require('node:child_process');
@@ -12,9 +14,12 @@ const execFileAsync = promisify(execFile);
 (async () => {
   assert(process.argv[2], 'Pass the Vibe99 Review executable path');
   const port = 9237;
+  // Never attach the diagnostic browser to an already-running review's cache.
+  const browserProfile = mkdtempSync(join(tmpdir(), 'vibe99-native-'));
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    WEBVIEW2_USER_DATA_FOLDER: browserProfile,
   };
   delete env.VIBE99_WINDOWS_SHELL;
   const child = spawn(resolve(process.argv[2]), [], { windowsHide: true, stdio: 'ignore', env });
@@ -41,6 +46,34 @@ const execFileAsync = promisify(execFile);
       }), `${id} must be visible within the window`);
     }
     console.log('PASS: ordinary Windows startup launches no WSL probes and shows all header controls');
+    if (process.argv.includes('--expect-defaults')) {
+      const defaults = require('../src/default-settings.json');
+      const actual = await page.evaluate(() => ({
+        fontSize: Number(document.querySelector('#font-size-input').value),
+        fontFamily: document.querySelector('#font-family-input').value,
+        paneWidth: Number(document.querySelector('#pane-width-input').value),
+        paneOpacity: Number(document.querySelector('#pane-opacity-input').value),
+        paneMaskOpacity: Number(document.querySelector('#pane-mask-alpha-input').value),
+        breathingAlertEnabled: document.querySelector('#breathing-alert-toggle').checked,
+        panes: document.querySelectorAll('.tab').length,
+      }));
+      assert.deepEqual(actual, {
+        fontSize: defaults.ui.fontSize, fontFamily: defaults.fontFamilies.windows,
+        paneWidth: defaults.ui.paneWidth, paneOpacity: defaults.ui.paneOpacity,
+        paneMaskOpacity: defaults.ui.paneMaskOpacity, breathingAlertEnabled: defaults.ui.breathingAlertEnabled,
+        panes: defaults.startup.paneCount,
+      });
+      const persisted = await page.evaluate(async () => {
+        const invoke = window.__TAURI__.core.invoke;
+        const settings = await invoke('settings_load');
+        await invoke('settings_save', { settings });
+        return invoke('settings_load');
+      });
+      assert(persisted.version >= 4);
+      assert.equal(persisted.ui.paneMaskOpacity, defaults.ui.paneMaskOpacity);
+      assert.equal(persisted.ui.breathingAlertEnabled, defaults.ui.breathingAlertEnabled);
+      console.log('PASS: native review uses the author’s defaults and preserves opacity/alerts on disk');
+    }
     await page.evaluate(async () => {
       window.__native = { packets: [], exits: [], errors: [], paused: false };
       await window.__TAURI__.event.listen('vibe99:terminal-data', ({ payload: p }) => {
@@ -135,5 +168,11 @@ const execFileAsync = promisify(execFile);
     if (page) await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()).catch(() => {});
     await browser?.close().catch(() => {});
     if (child.exitCode === null) child.kill();
+    try {
+      const target = realpathSync(browserProfile);
+      if (dirname(target) === realpathSync(tmpdir()) && basename(target).startsWith('vibe99-native-')) {
+        rmSync(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+      }
+    } catch { /* WebView may retain a cache handle briefly after app shutdown. */ }
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

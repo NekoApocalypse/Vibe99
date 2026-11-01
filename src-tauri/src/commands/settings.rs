@@ -2,11 +2,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
-const CURRENT_CONFIG_VERSION: u8 = 3;
+const CURRENT_CONFIG_VERSION: u8 = 4;
 
-const DEFAULT_FONT_SIZE: u32 = 13;
-const DEFAULT_PANE_OPACITY: f64 = 0.8;
-const DEFAULT_PANE_WIDTH: u32 = 720;
+fn default_ui_config() -> &'static Value {
+    static DEFAULTS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    &DEFAULTS.get_or_init(|| serde_json::from_str(include_str!("../../../src/default-settings.json"))
+        .expect("valid project defaults"))["ui"]
+}
+
+fn default_number(key: &str) -> f64 {
+    default_ui_config()[key].as_f64().expect("numeric project default")
+}
 
 // ----------------------------------------------------------------
 // Shell profile types
@@ -133,16 +139,16 @@ fn get_number(v: &Value, key: &str, default: f64) -> f64 {
 fn sanitize_ui_config(ui: Option<&Value>) -> Value {
     let ui = ui.unwrap_or(&Value::Null);
 
-    let font_size = get_number(ui, "fontSize", DEFAULT_FONT_SIZE as f64);
+    let font_size = get_number(ui, "fontSize", default_number("fontSize"));
     let font_size = font_size.round().clamp(10.0, 24.0) as u32;
 
-    let pane_opacity = get_number(ui, "paneOpacity", DEFAULT_PANE_OPACITY);
+    let pane_opacity = get_number(ui, "paneOpacity", default_number("paneOpacity"));
     let pane_opacity = ((pane_opacity * 100.0).round() / 100.0).clamp(0.55, 1.0);
 
-    let pane_mask_opacity = get_number(ui, "paneMaskOpacity", 0.25);
+    let pane_mask_opacity = get_number(ui, "paneMaskOpacity", default_number("paneMaskOpacity"));
     let pane_mask_opacity = ((pane_mask_opacity * 100.0).round() / 100.0).clamp(0.0, 1.0);
 
-    let pane_width = get_number(ui, "paneWidth", DEFAULT_PANE_WIDTH as f64);
+    let pane_width = get_number(ui, "paneWidth", default_number("paneWidth"));
     let pane_width = ((pane_width / 10.0).round() * 10.0).clamp(520.0, 2000.0) as u32;
 
     let font_family = ui
@@ -157,6 +163,8 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
         "paneOpacity": pane_opacity,
         "paneMaskOpacity": pane_mask_opacity,
         "paneWidth": pane_width,
+        "breathingAlertEnabled": ui.get("breathingAlertEnabled").and_then(Value::as_bool)
+            .unwrap_or_else(|| default_ui_config()["breathingAlertEnabled"].as_bool().unwrap()),
     });
 
     if !font_family.is_empty() {
@@ -172,6 +180,8 @@ fn sanitize_ui_config(ui: Option<&Value>) -> Value {
             "shortcuts".into(),
             Value::Object(shortcuts.clone()),
         );
+    } else {
+        result.as_object_mut().unwrap().insert("shortcuts".into(), default_ui_config()["shortcuts"].clone());
     }
 
     result
@@ -219,6 +229,19 @@ fn sanitize_session(session: Option<&Value>) -> Value {
     })
 }
 
+/// Normalize legacy visual values exactly once, before labelling them v4.
+fn sanitize_versioned_ui(ui: Option<&Value>, version: Option<u64>) -> Value {
+    let mut migrated = ui.cloned().unwrap_or(Value::Null);
+    if version.is_some_and(|v| v < 4) {
+        let opacity = migrated.get("paneMaskOpacity").or_else(|| migrated.get("paneMaskAlpha"))
+            .and_then(Value::as_f64).filter(|n| n.is_finite());
+        if let (Some(opacity), Some(object)) = (opacity, migrated.as_object_mut()) {
+            object.insert("paneMaskOpacity".into(), serde_json::json!(1.0 - opacity.clamp(0.0, 1.0)));
+        }
+    }
+    sanitize_ui_config(Some(&migrated))
+}
+
 /// Sanitize an arbitrary config value into the current schema.
 ///
 /// Handles:
@@ -240,10 +263,9 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
             let session = sanitize_session(obj.get("session"));
 
             let mut result = serde_json::json!({
-                // The renderer owns additional visual migrations (v4). Never
-                // downgrade their marker or they run again on every launch.
+                // Keep newer schema markers; normalize old visual values below.
                 "version": v.max(u64::from(CURRENT_CONFIG_VERSION)),
-                "ui": sanitize_ui_config(obj.get("ui")),
+                "ui": sanitize_versioned_ui(obj.get("ui"), Some(v)),
                 "shell": sanitize_shell_config(obj.get("shell"), &profiles),
             });
 
@@ -258,7 +280,7 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
             let obj = candidate.as_object().unwrap();
             serde_json::json!({
                 "version": CURRENT_CONFIG_VERSION,
-                "ui": sanitize_ui_config(obj.get("ui")),
+                "ui": sanitize_versioned_ui(obj.get("ui"), Some(v)),
                 "shell": {
                     "profiles": [],
                     "defaultProfile": "",
@@ -272,7 +294,7 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
             }) {
                 return serde_json::json!({
                     "version": CURRENT_CONFIG_VERSION,
-                    "ui": sanitize_ui_config(Some(candidate)),
+                    "ui": sanitize_versioned_ui(Some(candidate), Some(3)),
                     "shell": {
                         "profiles": [],
                         "defaultProfile": "",
@@ -283,12 +305,7 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
             // Null, non-object, or unrecognized format → defaults
             serde_json::json!({
                 "version": CURRENT_CONFIG_VERSION,
-                "ui": {
-                    "fontSize": DEFAULT_FONT_SIZE,
-                    "paneOpacity": DEFAULT_PANE_OPACITY,
-                    "paneMaskOpacity": 0.25,
-                    "paneWidth": DEFAULT_PANE_WIDTH,
-                },
+                "ui": sanitize_ui_config(None),
                 "shell": {
                     "profiles": [],
                     "defaultProfile": "",
@@ -364,6 +381,20 @@ mod version_tests {
     use super::*;
 
     #[test]
+    fn project_defaults_and_activity_preference_survive_roundtrips() {
+        let config = sanitize_config(&Value::Null);
+        assert_eq!(&config["ui"], default_ui_config());
+        assert_eq!(config["version"], 4);
+        assert_eq!(sanitize_config(&config), config);
+        for enabled in [false, true] {
+            let config = sanitize_config(&serde_json::json!({ "version": 4,
+                "ui": { "breathingAlertEnabled": enabled, "paneMaskOpacity": 0.03 } }));
+            assert_eq!(config["ui"]["breathingAlertEnabled"], enabled);
+            assert_eq!(sanitize_config(&config), config);
+        }
+    }
+
+    #[test]
     fn renderer_version_and_opacity_survive_repeated_roundtrips() {
         for opacity in [0.0, 0.25, 0.75, 1.0] {
             let mut config = serde_json::json!({ "version": 4, "ui": { "paneMaskOpacity": opacity } });
@@ -376,9 +407,10 @@ mod version_tests {
     }
 
     #[test]
-    fn legacy_version_still_requests_the_renderer_migration() {
+    fn legacy_opacity_migrates_once_in_the_backend() {
         let config = sanitize_config(&serde_json::json!({ "version": 3, "ui": { "paneMaskOpacity": 0.25 } }));
-        assert_eq!(config["version"], 3);
-        assert_eq!(config["ui"]["paneMaskOpacity"], 0.25);
+        assert_eq!(config["version"], 4);
+        assert_eq!(config["ui"]["paneMaskOpacity"], 0.75);
+        assert_eq!(sanitize_config(&config), config);
     }
 }

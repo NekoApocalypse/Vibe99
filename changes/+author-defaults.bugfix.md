@@ -1,1 +1,0 @@
-Use the author's saved appearance preferences as shared frontend/backend defaults: 16 px font, 1210 px panes, 70% pane opacity, a 3% background mask, disabled activity alerts, and four starting panes. Preserve the activity-alert preference and migrate legacy opacity values once. Keep platform font fallbacks without bundling font files.

@@ -2,6 +2,18 @@
 
 <!-- towncrier release notes start -->
 
+## 0.7.3 - 2026-11-01
+
+### Fixed
+
+- Frequent terminal title updates no longer interrupt tab clicks or renaming. Busy terminals now limit queued output so other panes stay responsive, and replaced shells cannot send stale output into their replacements.
+- Keep WSL discovery off the application launch and native-shell paths. Discover distributions on request with a bounded background probe, retain usable controls and saved profiles during failure, and offer pane-local shell recovery. Constrain the header layout so its controls remain visible with long tab content.
+- PowerShell prompts now recover mouse input after interrupted remote sessions. Other shells can use Recover Mouse Input from the pane menu or Ctrl+Shift+M; legacy mouse reporting and rendering after graphics context loss are also restored.
+- Preserve the renderer's settings version when saving, preventing the background mask opacity migration from running again on every restart.
+- Switch tabs immediately while preserving double-click rename, avoid redundant focus renders and shortcut-bar rebuilds, batch drag updates and resize measurements, and animate pane movement and activity alerts without repeated layout or shadow repaint work.
+- Use the author's saved appearance preferences as shared frontend/backend defaults: 16 px font, 1210 px panes, 70% pane opacity, a 3% background mask, disabled activity alerts, and four starting panes. Preserve the activity-alert preference and migrate legacy opacity values once. Keep platform font fallbacks without bundling font files.
+
+
 ## 0.7.2 - 2026-05-02
 
 ### Added

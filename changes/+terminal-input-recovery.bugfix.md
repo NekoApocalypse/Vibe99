@@ -1,1 +1,0 @@
-PowerShell prompts now recover mouse input after interrupted remote sessions. Other shells can use Recover Mouse Input from the pane menu or Ctrl+Shift+M; legacy mouse reporting and rendering after graphics context loss are also restored.

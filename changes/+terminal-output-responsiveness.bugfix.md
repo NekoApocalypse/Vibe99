@@ -1,1 +1,0 @@
-Frequent terminal title updates no longer interrupt tab clicks or renaming. Busy terminals now limit queued output so other panes stay responsive, and replaced shells cannot send stale output into their replacements.

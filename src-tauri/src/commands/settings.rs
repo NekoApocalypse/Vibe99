@@ -240,7 +240,9 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
             let session = sanitize_session(obj.get("session"));
 
             let mut result = serde_json::json!({
-                "version": CURRENT_CONFIG_VERSION,
+                // The renderer owns additional visual migrations (v4). Never
+                // downgrade their marker or they run again on every launch.
+                "version": v.max(u64::from(CURRENT_CONFIG_VERSION)),
                 "ui": sanitize_ui_config(obj.get("ui")),
                 "shell": sanitize_shell_config(obj.get("shell"), &profiles),
             });
@@ -355,4 +357,28 @@ pub fn settings_save(app: AppHandle, mut settings: Value) -> Result<Value, Strin
     std::fs::write(&path, serialized).map_err(|e| format!("failed to write settings: {e}"))?;
 
     Ok(sanitized)
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn renderer_version_and_opacity_survive_repeated_roundtrips() {
+        for opacity in [0.0, 0.25, 0.75, 1.0] {
+            let mut config = serde_json::json!({ "version": 4, "ui": { "paneMaskOpacity": opacity } });
+            for _ in 0..5 {
+                config = sanitize_config(&config);
+                assert_eq!(config["version"], 4);
+                assert_eq!(config["ui"]["paneMaskOpacity"], opacity);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_version_still_requests_the_renderer_migration() {
+        let config = sanitize_config(&serde_json::json!({ "version": 3, "ui": { "paneMaskOpacity": 0.25 } }));
+        assert_eq!(config["version"], 3);
+        assert_eq!(config["ui"]["paneMaskOpacity"], 0.25);
+    }
 }

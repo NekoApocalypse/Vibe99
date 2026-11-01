@@ -21,6 +21,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             terminal::terminal_create,
+            terminal::terminal_acknowledge,
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_destroy,

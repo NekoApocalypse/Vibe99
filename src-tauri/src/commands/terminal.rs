@@ -15,55 +15,86 @@ pub struct AppState {
 ///
 /// PTY output is forwarded to the frontend via the `vibe99:terminal-data` event:
 /// ```json
-/// { "paneId": "...", "data": "<utf8>" }
+/// { "paneId": "...", "sessionId": "...", "sequence": 1, "data": "<utf8>" }
 /// ```
 ///
 /// When the child process exits, a `vibe99:terminal-exit` event is emitted:
 /// ```json
-/// { "paneId": "...", "exitCode": 0 }
+/// { "paneId": "...", "sessionId": "...", "exitCode": 0 }
 /// ```
 #[tauri::command]
-pub fn terminal_create(
+pub async fn terminal_create(
     app: AppHandle,
     state: State<'_, AppState>,
     pane_id: String,
+    session_id: String,
     cols: Option<u16>,
     rows: Option<u16>,
     cwd: Option<String>,
     shell_profile_id: Option<String>,
 ) -> Result<(), String> {
-    state.pty
-        .spawn(app, &pane_id, cols, rows, cwd.as_deref(), shell_profile_id.as_deref())
+    let manager = state.pty.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.spawn(
+            app,
+            &pane_id,
+            &session_id,
+            cols,
+            rows,
+            cwd.as_deref(),
+            shell_profile_id.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| format!("terminal spawn task failed: {e}"))?
+}
+
+#[tauri::command]
+pub fn terminal_acknowledge(
+    state: State<'_, AppState>,
+    pane_id: String,
+    session_id: String,
+    sequence: u64,
+) {
+    state.pty.acknowledge(&pane_id, &session_id, sequence);
 }
 
 /// Write raw bytes to the PTY for the given pane.
 ///
 /// `data` is expected to be a base64-encoded string of the bytes to write.
 #[tauri::command]
-pub fn terminal_write(
+pub async fn terminal_write(
     state: State<'_, AppState>,
     pane_id: String,
+    session_id: String,
     data: String,
 ) -> Result<(), String> {
     let bytes = base64_decode(&data).map_err(|e| format!("invalid base64 data: {e}"))?;
-    state.pty.write(&pane_id, &bytes)
+    let manager = state.pty.clone();
+    tauri::async_runtime::spawn_blocking(move || manager.write(&pane_id, &session_id, &bytes))
+        .await
+        .map_err(|e| format!("terminal write task failed: {e}"))?
 }
 
 /// Resize the PTY for the given pane.
 #[tauri::command]
-pub fn terminal_resize(
+pub async fn terminal_resize(
     state: State<'_, AppState>,
     pane_id: String,
+    session_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state.pty.resize(&pane_id, cols, rows)
+    let manager = state.pty.clone();
+    tauri::async_runtime::spawn_blocking(move || manager.resize(&pane_id, &session_id, cols, rows))
+        .await
+        .map_err(|e| format!("terminal resize task failed: {e}"))?
 }
 
 /// Destroy the PTY session for the given pane.
 #[tauri::command]
-pub fn terminal_destroy(state: State<'_, AppState>, pane_id: String) {
-    state.pty.destroy(&pane_id);
+pub fn terminal_destroy(state: State<'_, AppState>, pane_id: String, session_id: String) {
+    state.pty.destroy(&pane_id, Some(&session_id));
 }
 
 /// Destroy all active PTY sessions.

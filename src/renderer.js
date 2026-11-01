@@ -18,6 +18,8 @@ import * as ColorsRegistry from './colors-registry.js';
 import { createActions } from './input/actions.js';
 import { createDispatcher } from './input/dispatcher.js';
 import { renderHintBar } from './hint-bar.js';
+import { createTerminalOutput } from './terminal-output.mjs';
+import { encodeTerminalInput, RESET_MOUSE_MODES } from './terminal-input.mjs';
 
 function getRuntimePlatform() {
   const platform = navigator.platform.toLowerCase();
@@ -93,6 +95,7 @@ function createUnavailableBridge() {
     defaultTabTitle: basename(defaultCwd),
     createTerminal: fail,
     writeTerminal: fail,
+    acknowledgeTerminal: () => Promise.resolve(),
     resizeTerminal: fail,
     destroyTerminal: fail,
     closeWindow: fail,
@@ -122,17 +125,20 @@ function createTauriBridge(tauri) {
     tauri.clipboardManager;
   const { openUrl } = tauri.opener;
 
-  function base64Encode(str) {
-    const bytes = new TextEncoder().encode(str);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+  const listenersReady = [];
+  const terminalStarts = new Map();
+  const terminalWrites = new Map();
+  const terminalResizes = new Map();
+  function ordered(map, key, operation) {
+    const next = (map.get(key) ?? Promise.resolve()).catch(() => {}).then(operation);
+    map.set(key, next);
+    const cleanup = () => { if (map.get(key) === next) map.delete(key); };
+    next.then(cleanup, cleanup);
+    return next;
   }
-
   function onTauriEvent(event, handler) {
     const unlisten = tauri.event.listen(event, (e) => handler(e.payload));
+    listenersReady.push(unlisten);
     return () => unlisten.then((fn) => fn());
   }
 
@@ -147,27 +153,33 @@ function createTauriBridge(tauri) {
     platform: getRuntimePlatform(),
     get defaultCwd() { return _resolvedCwd; },
     get defaultTabTitle() { return basename(_resolvedCwd); },
-    createTerminal: (payload) =>
-      invoke('terminal_create', {
+    createTerminal: async (payload) => {
+      await Promise.all(listenersReady);
+      return ordered(terminalStarts, payload.paneId, () => invoke('terminal_create', {
         paneId: payload.paneId,
+        sessionId: payload.sessionId,
         cols: payload.cols,
         rows: payload.rows,
         cwd: payload.cwd,
         shellProfileId: payload.shellProfileId ?? null,
-      }),
+      }));
+    },
     writeTerminal: (payload) =>
-      invoke('terminal_write', {
+      ordered(terminalWrites, payload.sessionId, () => invoke('terminal_write', {
         paneId: payload.paneId,
-        data: base64Encode(payload.data),
-      }),
+        sessionId: payload.sessionId,
+        data: encodeTerminalInput(payload.data, payload.binary),
+      })),
+    acknowledgeTerminal: (payload) => invoke('terminal_acknowledge', payload),
     resizeTerminal: (payload) =>
-      invoke('terminal_resize', {
+      ordered(terminalResizes, payload.sessionId, () => invoke('terminal_resize', {
         paneId: payload.paneId,
+        sessionId: payload.sessionId,
         cols: payload.cols,
         rows: payload.rows,
-      }),
+      })),
     destroyTerminal: (payload) =>
-      invoke('terminal_destroy', { paneId: payload.paneId }),
+      invoke('terminal_destroy', { paneId: payload.paneId, sessionId: payload.sessionId }),
     closeWindow: () => getCurrentWindow().close(),
     readClipboardText: () => clipboardReadText(),
     writeClipboardText: (text) => clipboardWriteText(text),
@@ -258,6 +270,25 @@ let paneMruOrder = panes.map((pane) => pane.id);
 let paneCycleState = null;
 
 const paneNodeMap = new Map();
+const tabNodeMap = new Map();
+let pendingTabRender = null;
+const pendingTitlePanes = new Set();
+
+function scheduleTitleRender(paneId) {
+  pendingTitlePanes.add(paneId);
+  if (pendingTabRender !== null) return;
+  pendingTabRender = requestAnimationFrame(() => {
+    pendingTabRender = null;
+    for (const id of pendingTitlePanes) {
+      const pane = panes.find(entry => entry.id === id);
+      const label = tabNodeMap.get(id)?.querySelector('.tab-label');
+      if (pane && label && label.textContent !== getPaneLabel(pane)) {
+        label.textContent = getPaneLabel(pane);
+      }
+    }
+    pendingTitlePanes.clear();
+  });
+}
 
 const stageEl = document.getElementById('stage');
 const tabsListEl = document.getElementById('tabs-list');
@@ -313,35 +344,30 @@ const paneActivityWatcher = createPaneActivityWatcher({
   },
 });
 
-const removeTerminalDataListener = bridge.onTerminalData(({ paneId, data }) => {
+const removeTerminalDataListener = bridge.onTerminalData(({ paneId, sessionId, sequence, data }) => {
   const node = paneNodeMap.get(paneId);
-  if (!node) return;
-  node.terminal.write(data);
+  if (!node || node.sessionId !== sessionId) return;
+  // Output proves that this generation is live even if invoke's reply is still
+  // in transit. Let xterm answer startup terminal queries immediately.
+  if (!node.sessionEnded) node.sessionReady = true;
+  node.output.push({ sequence, data });
   paneActivityWatcher.noteData(paneId);
 });
 
-const removeTerminalExitListener = bridge.onTerminalExit(({ paneId, exitCode }) => {
+const removeTerminalExitListener = bridge.onTerminalExit(({ paneId, sessionId, exitCode }) => {
   const node = paneNodeMap.get(paneId);
-  if (!node) {
-    return;
-  }
-
-  // If the terminal was destroyed for a shell change, or the process exited
-  // within a short grace period after a shell change, don't close the pane.
-  const graceMs = 3000;
-  const recentShellChange = node._shellChangeTime && (Date.now() - node._shellChangeTime < graceMs);
-  if (node._shellChanging || recentShellChange) {
-    node.sessionReady = false;
-    node.terminal.writeln('');
-    node.terminal.writeln(`\x1b[38;5;204m[shell exited with code ${exitCode}]\x1b[0m`);
-    return;
-  }
-
+  if (!node || node.sessionId !== sessionId) return;
   node.sessionReady = false;
+  node.sessionEnded = true;
+  node.output.finish(() => handleTerminalExit(node, sessionId, exitCode));
+});
+
+function handleTerminalExit(node, sessionId, exitCode) {
+  if (node.sessionId !== sessionId || !paneNodeMap.has(node.paneId)) return;
   node.terminal.writeln('');
   node.terminal.writeln(`\x1b[38;5;244m[process exited with code ${exitCode}]\x1b[0m`);
 
-  const paneIndex = getPaneIndex(paneId);
+  const paneIndex = getPaneIndex(node.paneId);
   if (paneIndex === -1) {
     return;
   }
@@ -352,7 +378,7 @@ const removeTerminalExitListener = bridge.onTerminalExit(({ paneId, exitCode }) 
   }
 
   closePane(paneIndex, { destroyTerminal: false });
-});
+}
 
 const removeMenuActionListener = bridge.onMenuAction(({ action, paneId }) => {
   try {
@@ -590,14 +616,11 @@ function changePaneShell(paneId, profileId) {
   );
   scheduleSettingsSave();
 
-  // Suppress the exit handler — the old PTY is about to be replaced.
-  // spawn() on the backend already destroys any previous session.
-  node._shellChanging = true;
-  node._shellChangeTime = Date.now();
-  node.sessionReady = false;
-  node.terminal.clear();
-  initializePaneTerminal(node).finally(() => {
-    node._shellChanging = false;
+  // A new generation discards old output/exit events and resets emulator modes.
+  const profileChange = Symbol();
+  node.profileChange = profileChange;
+  initializePaneTerminal(node).catch(reportError).finally(() => {
+    if (node.profileChange !== profileChange) return;
     // Revert profile on failure so the session doesn't persist a broken profile.
     if (!node.sessionReady) {
       panes = panes.map((p) =>
@@ -1099,11 +1122,11 @@ function createTab(pane, index, focusedIndex, dragMeta) {
   tabMain.className = 'tab-main';
   tabMain.setAttribute('aria-pressed', String(index === focusedIndex));
   tabMain.addEventListener('pointerdown', (event) => {
-    beginTabDrag(index, event);
+    beginTabDrag(getPaneIndex(pane.id), event);
   });
   tabMain.addEventListener('dblclick', (event) => {
     event.preventDefault();
-    beginRenamePane(index);
+    beginRenamePane(getPaneIndex(pane.id));
   });
 
   const swatch = document.createElement('span');
@@ -1116,6 +1139,23 @@ function createTab(pane, index, focusedIndex, dragMeta) {
     swatch.style.setProperty('--swatch-text-color', 'var(--tab-text-color)');
   }
 
+  const label = createTabLabel(pane);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'tab-close';
+  close.setAttribute('aria-label', `Close tab ${pane.id}`);
+  close.addEventListener('click', (event) => {
+    event.stopPropagation();
+    closePane(getPaneIndex(pane.id));
+  });
+
+  tabMain.append(swatch, label);
+  tab.append(tabMain, close);
+  return tab;
+}
+
+function createTabLabel(pane) {
   let label;
   if (renamingPaneId === pane.id) {
     label = document.createElement('input');
@@ -1139,11 +1179,15 @@ function createTab(pane, index, focusedIndex, dragMeta) {
       }
     });
     label.addEventListener('blur', () => {
-      commitRenamePane(pane.id, label.value);
+      if (renamingPaneId === pane.id && label.isConnected) {
+        commitRenamePane(pane.id, label.value);
+      }
     });
     queueMicrotask(() => {
-      label.focus();
-      label.select();
+      if (label.isConnected && renamingPaneId === pane.id) {
+        label.focus();
+        label.select();
+      }
     });
   } else {
     label = document.createElement('span');
@@ -1151,27 +1195,7 @@ function createTab(pane, index, focusedIndex, dragMeta) {
     label.textContent = getPaneLabel(pane);
   }
 
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'tab-close';
-  close.textContent = 'x';
-  close.setAttribute('aria-label', `Close tab ${pane.id}`);
-  close.disabled = panes.length === 1;
-
-  // Show pending close state
-  if (pendingClosePaneId === pane.id) {
-    close.classList.add('pending-close');
-    close.textContent = '?';
-  }
-
-  close.addEventListener('click', (event) => {
-    event.stopPropagation();
-    closePane(index);
-  });
-
-  tabMain.append(swatch, label);
-  tab.append(tabMain, close);
-  return tab;
+  return label;
 }
 
 function createPane(pane) {
@@ -1225,7 +1249,15 @@ function createPane(pane) {
   terminal.loadAddon(new Unicode11Addon());
   terminal.unicode.activeVersion = '11';
   terminal.open(terminalHost);
-  try { terminal.loadAddon(new WebglAddon()); } catch {}
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => {
+      // xterm falls back to its DOM renderer; the terminal and its buffers live on.
+      webgl.dispose();
+      terminal.refresh(0, terminal.rows - 1);
+    });
+    terminal.loadAddon(webgl);
+  } catch {}
   terminal.attachCustomKeyEventHandler((event) => {
     // Ctrl+Tab is reserved for pane MRU cycling — never let xterm forward
     // the literal Tab keystroke to the PTY.
@@ -1266,6 +1298,8 @@ function createPane(pane) {
     terminal,
     fitAddon,
     sessionReady: false,
+    sessionId: null,
+    output: null,
     sizeKey: '',
     needsFit: true,
     accent: pane.accent,
@@ -1279,20 +1313,24 @@ function createPane(pane) {
 
   terminal.onData((data) => {
     if (node.sessionReady) {
-      bridge.writeTerminal({ paneId: node.paneId, data });
+      bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data }).catch(reportError);
+    }
+  });
+  terminal.onBinary((data) => {
+    if (node.sessionReady) {
+      bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data, binary: true }).catch(reportError);
     }
   });
 
   terminal.onTitleChange((nextTitle) => {
     const trimmedTitle = nextTitle.trim();
-    if (!trimmedTitle) {
+    const current = panes.find((entry) => entry.id === pane.id);
+    if (!trimmedTitle || !current || current.terminalTitle === trimmedTitle) {
       return;
     }
-    panes = panes.map((entry) =>
-      entry.id === pane.id ? { ...entry, terminalTitle: trimmedTitle } : entry
-    );
+    current.terminalTitle = trimmedTitle;
     if (entryNeedsTabRefresh(pane.id)) {
-      renderTabs();
+      scheduleTitleRender(pane.id);
     }
   });
 
@@ -1342,6 +1380,7 @@ function fitTerminal(node, force = false) {
   if (node.sessionReady && (force || nextSizeKey !== node.sizeKey)) {
     bridge.resizeTerminal({
       paneId: node.paneId,
+      sessionId: node.sessionId,
       cols,
       rows,
     });
@@ -1355,20 +1394,50 @@ function fitTerminal(node, force = false) {
 }
 
 async function initializePaneTerminal(node) {
+  const previousSessionId = node.sessionId;
+  const sessionId = crypto.randomUUID();
+  node.sessionId = sessionId;
+  node.sessionReady = false;
+  node.sessionEnded = false;
+  node.output?.dispose();
+  node.output = createTerminalOutput({
+    terminal: node.terminal,
+    acknowledge: (sequence) => bridge.acknowledgeTerminal({ paneId: node.paneId, sessionId, sequence }),
+    onError: reportError,
+  });
+  if (previousSessionId) {
+    await bridge.destroyTerminal({ paneId: node.paneId, sessionId: previousSessionId });
+    await new Promise(resolve => node.terminal.write('', resolve));
+    if (node.sessionId !== sessionId || !paneNodeMap.has(node.paneId)) return;
+    node.terminal.reset();
+    const current = panes.find(pane => pane.id === node.paneId);
+    if (current) {
+      current.terminalTitle = basename(node.cwd);
+      scheduleTitleRender(node.paneId);
+    }
+  }
   fitTerminal(node, true);
   const pane = panes.find((p) => p.id === node.paneId);
   const profileId = pane?.shellProfileId ?? null;
   try {
     await bridge.createTerminal({
       paneId: node.paneId,
+      sessionId,
       cols: node.terminal.cols,
       rows: node.terminal.rows,
       cwd: node.cwd,
       shellProfileId: profileId,
     });
-    node.sessionReady = true;
-    fitTerminal(node, true);
+    if (node.sessionId !== sessionId || !paneNodeMap.has(node.paneId)) {
+      await bridge.destroyTerminal({ paneId: node.paneId, sessionId });
+      return;
+    }
+    if (!node.sessionEnded) {
+      node.sessionReady = true;
+      fitTerminal(node, true);
+    }
   } catch (error) {
+    if (node.sessionId !== sessionId || !paneNodeMap.has(node.paneId)) return;
     const message = error instanceof Error ? error.message : String(error);
     node.terminal.writeln(`\x1b[38;5;204mFailed to start shell${profileId ? ` "${profileId}"` : ''}: ${message}\x1b[0m`);
   }
@@ -1380,7 +1449,8 @@ function ensurePaneNodes() {
   for (const [paneId, node] of paneNodeMap.entries()) {
     if (!activeIds.has(paneId)) {
       paneActivityWatcher.forget(paneId);
-      bridge.destroyTerminal({ paneId });
+      node.output?.dispose();
+      if (node.sessionId) bridge.destroyTerminal({ paneId, sessionId: node.sessionId }).catch(reportError);
       node.terminal.dispose();
       node.root.remove();
       paneNodeMap.delete(paneId);
@@ -1394,7 +1464,7 @@ function ensurePaneNodes() {
       stageEl.append(node.root);
       paneActivityWatcher.setPaneEnabled(pane.id, pane.breathingMonitor !== false);
       requestAnimationFrame(() => {
-        initializePaneTerminal(node);
+        if (paneNodeMap.get(pane.id) === node) initializePaneTerminal(node).catch(reportError);
       });
     }
   }
@@ -1492,7 +1562,8 @@ function closePane(index, options = {}) {
   }
 
   if (destroyTerminal) {
-    bridge.destroyTerminal({ paneId: closingPane.id });
+    const node = paneNodeMap.get(closingPane.id);
+    if (node?.sessionId) bridge.destroyTerminal({ paneId: closingPane.id, sessionId: node.sessionId }).catch(reportError);
   }
 
   const remainingPanes = panes.filter((_, paneIndex) => paneIndex !== index);
@@ -1673,12 +1744,18 @@ function renderTabs() {
     return;
   }
   isRenderingTabs = true;
-  const focusedIndex = getFocusedIndex();
-  const draggedPaneId = dragState?.paneId ?? null;
-  let slot = 0;
-
-  tabsListEl.replaceChildren(
-    ...panes.map((pane, index) => {
+  try {
+    const focusedIndex = getFocusedIndex();
+    const draggedPaneId = dragState?.paneId ?? null;
+    let slot = 0;
+    const activeIds = new Set(panes.map(pane => pane.id));
+    for (const [paneId, tab] of tabNodeMap) {
+      if (!activeIds.has(paneId)) {
+        tab.remove();
+        tabNodeMap.delete(paneId);
+      }
+    }
+    panes.forEach((pane, index) => {
       const isDragging = pane.id === draggedPaneId && dragState?.hasMoved;
       const insertBefore = !isDragging && dragState?.hasMoved && dragState.dropIndex === slot;
       const dragMeta = {
@@ -1689,10 +1766,46 @@ function renderTabs() {
       if (!isDragging) {
         slot += 1;
       }
-      return createTab(pane, index, focusedIndex, dragMeta);
-    })
-  );
-  isRenderingTabs = false;
+      let tab = tabNodeMap.get(pane.id);
+      if (!tab) {
+        tab = createTab(pane, index, focusedIndex, dragMeta);
+        tabNodeMap.set(pane.id, tab);
+      }
+      tab.classList.toggle('is-focused', index === focusedIndex);
+      tab.classList.toggle('is-dragging', Boolean(isDragging));
+      tab.classList.toggle('insert-before', Boolean(insertBefore));
+      tab.style.transform = isDragging ? `translateX(${dragMeta.offsetX}px)` : '';
+      const accent = pane.customColor || pane.accent;
+      tab.style.setProperty('--pane-accent', accent);
+      tab.style.setProperty('--tab-text-color', getTextColorForBackground(accent));
+      const main = tab.querySelector('.tab-main');
+      main.setAttribute('aria-pressed', String(index === focusedIndex));
+      const swatch = tab.querySelector('.tab-swatch');
+      const badge = currentMode === 'nav' ? String(index + 1) : '';
+      if (swatch.textContent !== badge) swatch.textContent = badge;
+      swatch.style.setProperty('--swatch-text-color', 'var(--tab-text-color)');
+      let label = main.lastElementChild;
+      if ((label.tagName === 'INPUT') !== (renamingPaneId === pane.id)) {
+        const nextLabel = createTabLabel(pane);
+        label.replaceWith(nextLabel);
+        label = nextLabel;
+      }
+      if (label.tagName !== 'INPUT' && label.textContent !== getPaneLabel(pane)) {
+        label.textContent = getPaneLabel(pane);
+      }
+      const close = tab.querySelector('.tab-close');
+      close.disabled = panes.length === 1;
+      close.classList.toggle('pending-close', pendingClosePaneId === pane.id);
+      const closeText = pendingClosePaneId === pane.id ? '?' : 'x';
+      if (close.textContent !== closeText) close.textContent = closeText;
+      // Preserve the actual pointer target and inline editor across output updates.
+      if (tabsListEl.children[index] !== tab) {
+        tabsListEl.insertBefore(tab, tabsListEl.children[index] ?? null);
+      }
+    });
+  } finally {
+    isRenderingTabs = false;
+  }
 }
 
 function renderPanes(refit = false) {
@@ -1723,7 +1836,7 @@ function renderPanes(refit = false) {
     }
 
     if (refit || node.needsFit) {
-      fitTerminal(node, true);
+      fitTerminal(node);
     }
   });
 }
@@ -1890,7 +2003,7 @@ async function pasteIntoTerminal(paneId = focusedPaneId, options = {}) {
   if (bridge.platform === 'win32') {
     node.terminal.paste(text);
   } else {
-    bridge.writeTerminal({ paneId: node.paneId, data: text });
+    bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data: text }).catch(reportError);
   }
   return true;
 }
@@ -2014,6 +2127,16 @@ function hideContextMenu() {
   window.removeEventListener('blur', hideContextMenu);
 }
 
+function recoverMouseInput(paneId = focusedPaneId) {
+  const node = paneNodeMap.get(paneId);
+  if (!node?.output) return;
+  // Drain already received output first so an older DECSET cannot undo recovery.
+  node.output.finish(() => {
+    node.terminal.write(RESET_MOUSE_MODES);
+    node.terminal.focus();
+  });
+}
+
 function dismissContextMenuOnOutside(event) {
   if (!event.target.closest('.context-menu')) {
     hideContextMenu();
@@ -2044,6 +2167,8 @@ async function showTerminalContextMenu(node, event) {
       shortcut: breathingOn ? '✓' : '',
     },
     { label: 'Select All', action: 'terminal-select-all', shortcut: '⌘A' },
+    { label: 'Recover Mouse Input', action: 'terminal-recover-mouse',
+      shortcut: ShortcutsRegistry.formatShortcut(ShortcutsRegistry.getKeyboardShortcuts()['recover-mouse'], bridge.platform) },
   ];
 
   if (shellChildren.length > 0) {
@@ -2072,6 +2197,8 @@ function showTabContextMenu(paneId, event) {
 
   const items = [
     { label: 'Change Color...', action: 'tab-change-color' },
+    { label: 'Recover Mouse Input', action: 'terminal-recover-mouse',
+      shortcut: ShortcutsRegistry.formatShortcut(ShortcutsRegistry.getKeyboardShortcuts()['recover-mouse'], bridge.platform) },
     { type: 'separator' },
     { label: 'Rename Tab', action: 'tab-rename' },
     { label: 'Close Tab', action: 'tab-close', disabled: panes.length <= 1 },
@@ -2204,11 +2331,15 @@ async function pasteImageIntoTerminal(paneId = focusedPaneId, options = {}) {
     return false;
   }
 
-  bridge.writeTerminal({ paneId: node.paneId, data: '\u0016' });
+  bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data: '\u0016' }).catch(reportError);
   return true;
 }
 
 function handleMenuAction(action, paneId) {
+  if (action === 'terminal-recover-mouse') {
+    recoverMouseInput(paneId);
+    return;
+  }
   if (action === 'terminal-copy') {
     copyTerminalSelection(paneId);
     return;
@@ -2394,6 +2525,7 @@ function openKeymapHelpModal() {
 // columns (`mode`, `skipInInput`, `stopPropagation`) interpreted by the
 // dispatcher.
 const keyboardActions = createActions({
+  recoverMouseInput,
   addPane,
   enterNavigationMode,
   cycleToRecentPane,
@@ -2654,12 +2786,17 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+let pendingWindowResize = null;
 window.addEventListener('resize', () => {
-  try {
-    render(true);
-  } catch (error) {
-    reportError(error);
-  }
+  if (pendingWindowResize !== null) return;
+  pendingWindowResize = requestAnimationFrame(() => {
+    pendingWindowResize = null;
+    try {
+      render(true);
+    } catch (error) {
+      reportError(error);
+    }
+  });
 });
 
 window.addEventListener('DOMContentLoaded', async () => {

@@ -3,9 +3,11 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::output_flow::OutputFlow;
 use crate::wsl;
 
 /// Minimum column count for a PTY session.
@@ -45,6 +47,8 @@ pub fn display_name_to_id(name: &str) -> String {
 #[serde(rename_all = "camelCase")]
 struct TerminalDataPayload {
     pane_id: String,
+    session_id: String,
+    sequence: u64,
     data: String,
 }
 
@@ -85,34 +89,35 @@ fn utf8_safe_cut(buf: &[u8]) -> usize {
 #[serde(rename_all = "camelCase")]
 struct TerminalExitPayload {
     pane_id: String,
+    session_id: String,
     exit_code: u32,
 }
 
 /// Holds the live resources for a single PTY session.
 struct PtySession {
+    session_id: String,
+    flow: Arc<OutputFlow>,
     /// The master end of the PTY pair. Kept alive so the child process
     /// has a valid controlling terminal. Dropping this causes the child
     /// to receive SIGHUP.
-    master: Box<dyn MasterPty + Send>,
+    master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     /// Writer to the PTY master (stdin of the child process).
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// Killer handle to terminate the child process.
     killer: Box<dyn ChildKiller + Send + Sync>,
-    /// Join handle for the background reader thread.
-    _reader_thread: std::thread::JoinHandle<()>,
-    /// Join handle for the exit-watcher thread.
-    exit_thread: std::thread::JoinHandle<()>,
 }
 
 /// Manages a collection of PTY sessions keyed by pane ID.
 pub struct PtyManager {
     sessions: Mutex<HashMap<String, PtySession>>,
+    shutting_down: AtomicBool,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
+            shutting_down: AtomicBool::new(false),
         }
     }
 
@@ -136,13 +141,17 @@ impl PtyManager {
         self: &Arc<Self>,
         app: AppHandle,
         pane_id: &str,
+        session_id: &str,
         cols: Option<u16>,
         rows: Option<u16>,
         cwd: Option<&str>,
         shell_profile_id: Option<&str>,
     ) -> Result<(), String> {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err("application is closing".into());
+        }
         // Kill any previous session for this pane.
-        self.destroy(pane_id);
+        self.destroy(pane_id, None);
 
         let pty_system = native_pty_system();
         let cwd = resolve_working_directory(cwd);
@@ -207,29 +216,63 @@ impl PtyManager {
         let killer = child.clone_killer();
 
         let pane_id_owned = pane_id.to_string();
+        let session_id_owned = session_id.to_string();
+        let flow = Arc::new(OutputFlow::default());
+        let mut session = PtySession {
+            session_id: session_id_owned.clone(),
+            flow: flow.clone(),
+            master: Arc::new(Mutex::new(Some(master))),
+            writer: Arc::new(Mutex::new(writer)),
+            killer,
+        };
+        // Publish the generation before starting either worker: very short-lived
+        // shells can otherwise exit before their session is registered.
+        {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|e| format!("lock poisoned: {e}"))?;
+            if self.shutting_down.load(Ordering::Acquire) {
+                let _ = session.killer.kill();
+                return Err("application is closing".into());
+            }
+            sessions.insert(pane_id.to_string(), session);
+        }
+        drop(pair.slave);
 
-        // Read PTY output on a blocking thread and emit Tauri events.
         let app_reader = app.clone();
         let pane_id_reader = pane_id_owned.clone();
-        let _reader_thread = std::thread::spawn(move || {
+        let session_id_reader = session_id_owned.clone();
+        let reader_flow = flow.clone();
+        let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
-            // Holds incomplete UTF-8 tail bytes from a previous read so
-            // that multi-byte characters are not split across payloads.
-            let mut pending: Vec<u8> = Vec::with_capacity(4);
-
+            let mut pending = Vec::with_capacity(8196);
+            let emit = |data: String| {
+                // After explicit close, keep draining the pipe without emitting.
+                // ClosePseudoConsole can wait for its output pipe to drain.
+                let Some(sequence) = reader_flow.reserve(data.len()) else {
+                    return;
+                };
+                if app_reader
+                    .emit(
+                        "vibe99:terminal-data",
+                        TerminalDataPayload {
+                            pane_id: pane_id_reader.clone(),
+                            session_id: session_id_reader.clone(),
+                            sequence,
+                            data,
+                        },
+                    )
+                    .is_err()
+                {
+                    reader_flow.cancel();
+                }
+            };
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
-                        // Flush any remaining bytes before closing.
                         if !pending.is_empty() {
-                            let text = String::from_utf8_lossy(&pending);
-                            let _ = app_reader.emit(
-                                "vibe99:terminal-data",
-                                TerminalDataPayload {
-                                    pane_id: pane_id_reader.clone(),
-                                    data: text.into_owned(),
-                                },
-                            );
+                            emit(String::from_utf8_lossy(&pending).into_owned());
                         }
                         break;
                     }
@@ -237,14 +280,7 @@ impl PtyManager {
                         pending.extend_from_slice(&buf[..n]);
                         let cut = utf8_safe_cut(&pending);
                         if cut > 0 {
-                            let text = String::from_utf8_lossy(&pending[..cut]);
-                            let _ = app_reader.emit(
-                                "vibe99:terminal-data",
-                                TerminalDataPayload {
-                                    pane_id: pane_id_reader.clone(),
-                                    data: text.into_owned(),
-                                },
-                            );
+                            emit(String::from_utf8_lossy(&pending[..cut]).into_owned());
                             pending.drain(..cut);
                         }
                     }
@@ -252,119 +288,146 @@ impl PtyManager {
             }
         });
 
-        // Watch for child exit on a blocking thread. Emit the exit event
-        // and remove the session from the map, matching Electron behaviour.
         let manager = Arc::clone(self);
-        let exit_thread = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             let exit_code = child.wait().map(|s| s.exit_code()).unwrap_or(1);
-
-            // Emit the exit event before removing the session so the
-            // frontend always receives it.
+            // Closing ConPTY makes its output reader reach EOF. Keep the flow
+            // entry available for ACKs while the final output drains, and never
+            // hold the map mutex during ClosePseudoConsole (it can block).
+            let master = manager.sessions.lock().ok().and_then(|sessions| {
+                sessions
+                    .get(&pane_id_owned)
+                    .filter(|s| s.session_id == session_id_owned)
+                    .map(|s| s.master.clone())
+            });
+            if let Some(master) = master {
+                let closing = master.lock().ok().and_then(|mut master| master.take());
+                drop(closing);
+            }
+            // Preserve tail output before publishing exit. Explicit destruction
+            // cancels credits and closes the master, allowing the reader to leave.
+            let _ = reader_thread.join();
             let _ = app.emit(
                 "vibe99:terminal-exit",
                 TerminalExitPayload {
                     pane_id: pane_id_owned.clone(),
+                    session_id: session_id_owned.clone(),
                     exit_code,
                 },
             );
-
-            // Remove the session from the map (matches Electron's
-            // `terminalSessions.delete(paneId)`).
             if let Ok(mut sessions) = manager.sessions.lock() {
-                sessions.remove(&pane_id_owned);
+                if sessions
+                    .get(&pane_id_owned)
+                    .is_some_and(|s| s.session_id == session_id_owned)
+                {
+                    sessions.remove(&pane_id_owned);
+                }
             }
+            flow.cancel();
         });
-
-        let session = PtySession {
-            master,
-            writer,
-            killer,
-            _reader_thread,
-            exit_thread,
-        };
-
-        self.sessions
-            .lock()
-            .map_err(|e| format!("lock poisoned: {e}"))?
-            .insert(pane_id.to_string(), session);
-
         Ok(())
     }
 
-    /// Write raw bytes to the PTY master for the given `pane_id`.
-    pub fn write(&self, pane_id: &str, data: &[u8]) -> Result<(), String> {
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|e| format!("lock poisoned: {e}"))?;
+    pub fn acknowledge(&self, pane_id: &str, session_id: &str, sequence: u64) {
+        let flow = self.sessions.lock().ok().and_then(|sessions| {
+            sessions
+                .get(pane_id)
+                .filter(|s| s.session_id == session_id)
+                .map(|s| s.flow.clone())
+        });
+        if let Some(flow) = flow {
+            flow.acknowledge(sequence);
+        }
+    }
 
-        let session = sessions
-            .get_mut(pane_id)
-            .ok_or_else(|| format!("no session for pane {pane_id}"))?;
-
-        session
-            .writer
+    pub fn write(&self, pane_id: &str, session_id: &str, data: &[u8]) -> Result<(), String> {
+        // A blocked write in one pane must not hold the map used by all panes.
+        let writer = {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|e| format!("lock poisoned: {e}"))?;
+            let Some(session) = sessions.get(pane_id).filter(|s| s.session_id == session_id) else {
+                return Ok(()); // Input from a replaced/disposed generation.
+            };
+            session.writer.clone()
+        };
+        let mut writer = writer.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+        writer
             .write_all(data)
             .map_err(|e| format!("write to PTY failed: {e}"))?;
-
-        session
-            .writer
-            .flush()
-            .map_err(|e| format!("flush PTY failed: {e}"))?;
-
-        Ok(())
+        writer.flush().map_err(|e| format!("flush PTY failed: {e}"))
     }
 
-    /// Resize the PTY for the given `pane_id`. Column and row values are
-    /// clamped to the configured minimums.
-    pub fn resize(&self, pane_id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let sessions = self
-            .sessions
-            .lock()
-            .map_err(|e| format!("lock poisoned: {e}"))?;
-
-        let session = sessions
-            .get(pane_id)
-            .ok_or_else(|| format!("no session for pane {pane_id}"))?;
-
-        session
-            .master
+    pub fn resize(
+        &self,
+        pane_id: &str,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), String> {
+        let master = {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|e| format!("lock poisoned: {e}"))?;
+            let Some(session) = sessions.get(pane_id).filter(|s| s.session_id == session_id) else {
+                return Ok(());
+            };
+            session.master.clone()
+        };
+        let master = master.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+        let Some(master) = &*master else {
+            return Ok(());
+        };
+        master
             .resize(PtySize {
                 rows: rows.max(MIN_ROWS),
                 cols: cols.max(MIN_COLS),
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("resize failed: {e}"))?;
-
-        Ok(())
+            .map_err(|e| format!("resize failed: {e}"))
     }
 
-    /// Kill the child process, remove the session for `pane_id`, and join the
-    /// exit-watcher thread so no stale events are emitted after this returns.
-    pub fn destroy(&self, pane_id: &str) {
-        let exit_handle = {
-            let mut sessions = match self.sessions.lock() {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            let Some(session) = sessions.remove(pane_id) else {
+    /// Cancel blocked readers before killing the child. Do not join on the UI
+    /// thread; the exit worker reaps the child and owns the reader's join handle.
+    pub fn destroy(&self, pane_id: &str, session_id: Option<&str>) {
+        let session = {
+            let Ok(mut sessions) = self.sessions.lock() else {
                 return;
             };
-            let PtySession { mut killer, exit_thread, .. } = session;
-            let _ = killer.kill();
-            exit_thread
+            if !sessions
+                .get(pane_id)
+                .is_some_and(|s| session_id.is_none_or(|id| id == s.session_id))
+            {
+                return;
+            }
+            sessions.remove(pane_id)
         };
-        let _ = exit_handle.join();
+        if let Some(mut session) = session {
+            session.flow.cancel();
+            std::thread::spawn(move || {
+                let _ = session.killer.kill();
+                drop(session);
+            });
+        }
     }
 
-    /// Destroy all active sessions.
     pub fn destroy_all(&self) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            for session in sessions.values_mut() {
+        self.shutting_down.store(true, Ordering::Release);
+        let sessions = {
+            let Ok(mut sessions) = self.sessions.lock() else {
+                return;
+            };
+            std::mem::take(&mut *sessions)
+        };
+        for (_, mut session) in sessions {
+            session.flow.cancel();
+            std::thread::spawn(move || {
                 let _ = session.killer.kill();
-            }
-            sessions.clear();
+                drop(session);
+            });
         }
     }
 }
@@ -682,7 +745,7 @@ fn build_command(candidate: &ShellCandidate, cwd: &Path) -> Result<CommandBuilde
     }
 
     let mut cmd = CommandBuilder::new(&shell_path);
-    cmd.args(&candidate.args);
+    cmd.args(crate::shell_integration::args(&shell_path, &candidate.args));
     cmd.cwd(cwd);
     Ok(cmd)
 }

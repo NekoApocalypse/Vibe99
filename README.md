@@ -53,12 +53,33 @@ npm run tauri:build
 | `Ctrl+Left` / `Ctrl+Right` | Spatial navigation between panes |
 | `Ctrl+B` | Enter navigation mode (`H`/`L` or arrows to move, `Enter` to focus) |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste in the focused terminal |
+| `Ctrl+Shift+M` | Recover mouse input after an interrupted terminal application |
 | double-click tab | Rename it |
 | drag tab | Reorder panes |
 | top-right `+` | Add a pane |
 | top-right gear | Open display settings |
 
 Shortcuts are configurable from the gear menu → Keyboard Shortcuts.
+
+If clicks or scrolling print escape sequences after an SSH disconnect, choose
+**Recover Mouse Input** from the pane or tab context menu, or press
+`Ctrl+Shift+M`. This keeps the screen and scrollback intact. Ordinary interactive
+PowerShell profiles recover automatically when the local prompt returns; custom
+profiles that launch a script or command can use the manual action. Existing
+PowerShell profile files are not modified. Mouse modes are preserved when merely
+switching windows or resuming a surviving remote session.
+
+Run `npm test` for stream regression tests and `npm run test:ui` for browser
+interaction tests. The latter uses Edge on Windows; on other platforms install
+Chromium with `npx playwright install chromium` first. Rust tests run with
+`cargo test --manifest-path src-tauri/Cargo.toml --lib`.
+
+`npm run tauri:build:review` builds **Vibe99 Review** with its own application
+identity and settings. On Windows, run
+`node scripts/test-native-terminal.cjs src-tauri/target/release/vibe99.exe`
+against that build to exercise real PTY
+recovery, flow control, process exit, and session replacement. The PowerShell
+prompt hook can also be checked with `node scripts/test-powershell-integration.cjs`.
 
 ## Platform Defaults And Known Issues
 

@@ -12,6 +12,7 @@ import * as ShortcutsRegistry from './shortcuts-registry.js';
  */
 function getShortcutActionName(actionId) {
   const names = {
+    'recover-mouse': 'Recover Mouse Input',
     'new-tab': 'New Tab',
     'navigation-mode': 'Navigation Mode',
     'copy': 'Copy',
@@ -35,6 +36,7 @@ function getShortcutActionName(actionId) {
  */
 function getShortcutActionDescription(actionId) {
   const descriptions = {
+    'recover-mouse': 'Stop mouse escape sequences after an interrupted terminal application',
     'new-tab': 'Create a new terminal pane',
     'navigation-mode': 'Enter keyboard navigation mode',
     'copy': 'Copy selected text to clipboard',

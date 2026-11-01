@@ -6,16 +6,20 @@
   "license": "GPL-3.0-or-later",
   "description": "Vibe99 terminal application",
   "scripts": {
+    "test": "node --test tests/terminal-stream.test.mjs",
+    "test:ui": "node scripts/test-terminal-ui.cjs",
     "release:notes": "node ./scripts/extract-release-notes.mjs",
     "bump-version": "node ./scripts/bump-version.mjs",
     "vite:dev": "vite",
     "vite:build": "vite build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:review": "tauri build --config scripts/tauri-review.conf.json"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "playwright": "^1.64.1",
     "vite": "^6.4.2"
   },
   "dependencies": {

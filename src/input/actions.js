@@ -16,6 +16,7 @@
 
 export function createActions(deps) {
   return {
+    recoverMouseInput: () => deps.recoverMouseInput(),
     // Pane lifecycle / focus
     newPane: () => deps.addPane(),
     enterNav: () => deps.enterNavigationMode(),

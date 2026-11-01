@@ -25,6 +25,7 @@
 
 export const KEYMAP = [
   // Global
+  { id: 'recover-mouse', mode: '*', chord: 'Ctrl+Shift+M', action: 'recoverMouseInput', hint: 'recover mouse', skipInInput: true, stopPropagation: true },
   { mode: '*',   chord: 'Ctrl+Shift+O',    action: 'toggleCommandPalette',  hint: 'palette',          stopPropagation: true },
   { mode: '*',   chord: 'Ctrl+Tab',        action: 'cycleRecent',           hint: 'recent',           skipInInput: true, stopPropagation: true },
   { mode: '*',   chord: 'Ctrl+Shift+Tab',  action: 'cycleRecentReverse',    hint: 'recent',           skipInInput: true, stopPropagation: true },

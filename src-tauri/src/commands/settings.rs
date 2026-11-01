@@ -301,7 +301,11 @@ pub(crate) fn sanitize_config(candidate: &Value) -> Value {
 /// Returns the sanitized config. If the file does not exist or cannot be
 /// parsed, the default config is returned instead.
 #[tauri::command]
-pub fn settings_load(app: AppHandle) -> Result<Value, String> {
+pub async fn settings_load(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || load_config(&app)).await.map_err(|e| e.to_string())?
+}
+
+fn load_config(app: &AppHandle) -> Result<Value, String> {
     let path = settings_path(&app)?;
 
     if !path.exists() {

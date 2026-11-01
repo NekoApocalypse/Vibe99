@@ -4,99 +4,99 @@
 //! environment variable bridging. All functions are no-ops on non-Windows
 //! platforms, keeping the call sites clean.
 //!
-//! ## Design decisions
-//!
-//! - **`wsl.exe` is the sole detection mechanism.** We run `wsl.exe --list
-//!   --quiet` and check for a zero exit code. This matches how VS Code and
-//!   other tools detect WSL availability — no registry scraping or path
-//!   probing (P1: minimal primitives).
-//!
-//! - **Path conversion is pure-string.** `C:\Users\foo → /mnt/c/Users/foo`.
-//!   UNC paths (`\\server\share`) and drive-relative paths (`C:bar`) are
-//!   rejected because they have no canonical WSL mapping (P3: make errors
-//!   structurally impossible by returning `None`).
-//!
-//! - **Environment passthrough is explicit.** Only variables known to be
-//!   meaningful in WSL are forwarded, preventing Windows-specific noise from
-//!   polluting the Linux environment (P11: functional self-discipline).
+//! Discovery is optional, host-only and bounded. Never call it while selecting
+//! a native shell or on the window event thread.
 
 #[cfg(target_os = "windows")]
 use std::{os::windows::process::CommandExt, process::Command};
 
-// ----------------------------------------------------------------
-// Detection
-// ----------------------------------------------------------------
-
-/// Whether WSL is available on this system.
-///
-/// On non-Windows platforms this always returns `false`.
-/// On Windows it probes for `wsl.exe` by running `wsl.exe --list --quiet`
-/// with a short timeout, so the check is fast even when WSL is not installed.
-pub fn is_wsl_available() -> bool {
+/// Locate the Windows launcher without depending on PATH or guest interop.
+pub fn launcher_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        Command::new("wsl.exe")
-            .args(["--list", "--quiet"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        false
-    }
-}
-
-/// List installed WSL distributions.
-///
-/// Returns distribution names (e.g. `["Ubuntu", "Debian"]`). Returns an
-/// empty vec if WSL is not available or no distributions are installed.
-pub fn list_distributions() -> Vec<String> {
-    #[cfg(target_os = "windows")]
-    {
-        let output = Command::new("wsl.exe")
-            .args(["--list", "--quiet"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-            .output();
-
-        match output {
-            Ok(out) if out.status.success() => {
-                let text = decode_utf16le(&out.stdout);
-                text.lines()
-                    .map(|line| line.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            }
-            _ => Vec::new(),
+        let root = std::path::PathBuf::from(std::env::var_os("SystemRoot")?);
+        // Sysnative bypasses filesystem redirection for a 32-bit process.
+        for directory in ["Sysnative", "System32"] {
+            let path = root.join(directory).join("wsl.exe");
+            if path.is_file() { return Some(path); }
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Vec::new()
-    }
+    None
 }
 
-/// Decode UTF-16LE bytes (as emitted by `wsl.exe --list --quiet`) to a Rust
-/// string. Strips a leading BOM (`FF FE`) if present.
+/// Execute only an owned discovery probe, with bounded time and output.
+/// A temporary file avoids pipe deadlocks, including inherited pipe handles.
+#[cfg(target_os = "windows")]
+fn run_probe(command: &mut Command, timeout: std::time::Duration) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    use std::process::Stdio;
+    use std::time::Instant;
+    const MAX_OUTPUT: u64 = 64 * 1024;
+    let mut output = tempfile::tempfile().map_err(|e| e.to_string())?;
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(output.try_clone().map_err(|e| e.to_string())?)
+        .stderr(Stdio::null())
+        .creation_flags(0x0800_0000)
+        .spawn().map_err(|e| format!("Could not start WSL discovery: {e}"))?;
+    let started = Instant::now();
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break Ok(()),
+            Ok(Some(status)) => break Err(format!("WSL discovery exited with {status}")),
+            Err(e) => break Err(e.to_string()),
+            Ok(None) => {}
+        }
+        if started.elapsed() >= timeout {
+            break Err("WSL discovery timed out. Local shells are still available.".into());
+        }
+        if output.metadata().map(|m| m.len()).unwrap_or(MAX_OUTPUT + 1) > MAX_OUTPUT {
+            break Err("WSL discovery returned too much output".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    if result.is_err() { let _ = child.kill(); }
+    let _ = child.wait(); // Reap only our probe; never terminate a distro or service.
+    result?;
+    output.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    output.take(MAX_OUTPUT + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_OUTPUT { return Err("WSL discovery returned too much output".into()); }
+    Ok(bytes)
+}
+
+/// Single-flight discovery with a short cache for both success and failure.
+/// Call from a blocking worker only. No Linux process is started.
+pub fn discover_distributions() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+        type Entry = (Instant, Result<Vec<String>, String>);
+        static CACHE: Mutex<Option<Entry>> = Mutex::new(None);
+        let mut cache = CACHE.lock().map_err(|e| e.to_string())?;
+        if let Some((when, result)) = &*cache {
+            if when.elapsed() < Duration::from_secs(5) { return result.clone(); }
+        }
+        let result = (|| {
+            let path = launcher_path().ok_or("WSL launcher was not found")?;
+            let bytes = run_probe(Command::new(path).args(["--list", "--quiet"]), Duration::from_secs(3))?;
+            Ok(decode_utf16le(&bytes).lines().map(str::trim)
+                .filter(|s| !s.is_empty()).map(str::to_owned).collect())
+        })();
+        *cache = Some((Instant::now(), result.clone()));
+        result
+    }
+    #[cfg(not(target_os = "windows"))]
+    { Ok(Vec::new()) }
+}
+
 #[cfg(target_os = "windows")]
 fn decode_utf16le(bytes: &[u8]) -> String {
-    let bytes = if bytes.starts_with(&[0xFF, 0xFE]) {
-        &bytes[2..]
-    } else {
-        bytes
-    };
-    bytes
-        .chunks_exact(2)
-        .filter_map(|chunk| {
-            let code_unit = u16::from_le_bytes([chunk[0], chunk[1]]);
-            char::from_u32(code_unit as u32)
-        })
-        .collect()
+    let bytes = bytes.strip_prefix(&[0xFF, 0xFE]).unwrap_or(bytes);
+    let words: Vec<u16> = bytes.chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    String::from_utf16_lossy(&words)
 }
 
 // ----------------------------------------------------------------
@@ -229,41 +229,37 @@ pub fn wsl_shell_args(distro: Option<&str>, shell_cmd: &str, shell_args: &[Strin
     args
 }
 
-/// Detect the default shell inside WSL by running `wsl.exe -- sh -c
-/// 'echo $SHELL'`.
-///
-/// Returns the shell path (e.g. `/bin/bash`) or `None` if detection fails.
-pub fn detect_wsl_default_shell() -> Option<String> {
-    #[cfg(target_os = "windows")]
-    {
-        let output = Command::new("wsl.exe")
-            .args(["--", "sh", "-c", "echo $SHELL"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let shell = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if shell.is_empty() {
-            return None;
-        }
-
-        Some(shell)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn stalled_probe_is_bounded() {
+        let start = std::time::Instant::now();
+        let result = run_probe(
+            Command::new("powershell.exe").args(["-NoProfile", "-Command", "Start-Sleep -Seconds 60"]),
+            std::time::Duration::from_millis(150),
+        );
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn probe_collects_output_and_reports_failure() {
+        let timeout = std::time::Duration::from_secs(3);
+        let bytes = run_probe(Command::new("cmd.exe").args(["/d", "/c", "echo probe-ok"]), timeout).unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("probe-ok"));
+        assert!(run_probe(Command::new("cmd.exe").args(["/d", "/c", "exit /b 7"]), timeout).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn distribution_names_preserve_unicode() {
+        let words: Vec<u8> = "\u{feff}Ubuntu-🐈\r\n".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert_eq!(decode_utf16le(&words), "Ubuntu-🐈\r\n");
+    }
 
     #[test]
     fn windows_to_wsl_basic() {

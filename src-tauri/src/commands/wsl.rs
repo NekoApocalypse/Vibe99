@@ -15,23 +15,11 @@ pub struct WslStatus {
 ///
 /// Always returns `available: false` on non-Windows platforms.
 #[tauri::command]
-pub fn wsl_status() -> WslStatus {
-    let available = wsl::is_wsl_available();
-    let distributions = if available {
-        wsl::list_distributions()
-    } else {
-        Vec::new()
-    };
-    let default_shell = if available {
-        wsl::detect_wsl_default_shell()
-    } else {
-        None
-    };
-    WslStatus {
-        available,
-        distributions,
-        default_shell,
-    }
+pub async fn wsl_status() -> Result<WslStatus, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let distributions = wsl::discover_distributions()?;
+        Ok(WslStatus { available: !distributions.is_empty(), distributions, default_shell: None })
+    }).await.map_err(|e| e.to_string())?
 }
 
 /// Convert a Windows path to its WSL equivalent.
@@ -51,8 +39,8 @@ pub fn wsl_cwd() -> Result<String, String> {
     let cwd = std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
     let cwd_str = cwd.display().to_string();
 
-    // If this is a Windows path and WSL is available, convert it.
-    if cfg!(target_os = "windows") && wsl::is_wsl_available() {
+    // Pure conversion: asking for a path must never start WSL discovery.
+    if cfg!(target_os = "windows") {
         if let Some(wsl_path) = wsl::windows_to_wsl_path(&cwd_str) {
             return Ok(wsl_path);
         }

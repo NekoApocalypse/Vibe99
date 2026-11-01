@@ -438,98 +438,45 @@ impl PtyManager {
 
 /// Return the ordered list of shell candidates for spawning a PTY.
 ///
-/// Priority:
-/// 1. Default profile from settings (if configured and valid).
-/// 2. Remaining profiles from settings (if any).
-/// 3. Auto-detected platform fallbacks including WSL (always appended as safety net).
-///
-/// When `shell_profile_id` is `Some(id)`, only the matching profile is
-/// tried (with auto-detected fallbacks as safety net), bypassing the
-/// normal priority order.
+/// Explicit and configured default profiles are used directly. Without a
+/// selected profile, try native platform defaults. Discovery is never part of
+/// shell resolution, and failure of a selected profile stays in its pane.
 fn shell_candidates(app: &AppHandle, shell_profile_id: Option<&str>) -> Vec<ShellCandidate> {
-    let mut candidates: Vec<ShellCandidate> = Vec::new();
-    let mut seen: HashSet<(PathBuf, Option<String>)> = HashSet::new();
+    let config = load_settings_config(app).unwrap_or_default();
+    resolve_shell_candidates(&config, shell_profile_id)
+}
 
-    if let Ok(config) = load_settings_config(app) {
-        let profiles = extract_profiles(&config);
-        let default_id = extract_default_profile(&config);
-
-        // If a specific profile is requested, use only that one.
-        if let Some(requested_id) = shell_profile_id {
-            if let Some(profile) = profiles.iter().find(|p| p.id == requested_id) {
-                let path = PathBuf::from(&profile.command);
-                if seen.insert((path.clone(), None)) {
-                    candidates.push(ShellCandidate {
-                        shell: path,
-                        args: profile.args.clone(),
-                        display_name: None,
-                    });
-                }
-            }
+fn resolve_shell_candidates(config: &serde_json::Value, requested: Option<&str>) -> Vec<ShellCandidate> {
+    // Recovery bypasses both the configured default and environment overrides.
+    if requested == Some("__vibe99_local__") {
+        let shells: &[&str] = if cfg!(target_os = "windows") {
+            &["powershell.exe", "pwsh.exe", "cmd.exe"]
         } else {
-            // Normal priority: default profile first, then the rest.
-            let ordered: Vec<_> = profiles
-                .iter()
-                .filter(|p| p.id != default_id)
-                .chain(profiles.iter().filter(|p| p.id == default_id))
-                .collect();
-
-            for profile in ordered.into_iter().rev() {
-                let path = PathBuf::from(&profile.command);
-                if seen.insert((path.clone(), None)) {
-                    candidates.push(ShellCandidate {
-                        shell: path,
-                        args: profile.args.clone(),
-                        display_name: None,
-                    });
-                }
-            }
-        }
+            &["/bin/sh"]
+        };
+        return shells.iter().map(|shell| ShellCandidate {
+            shell: PathBuf::from(shell), args: vec![], display_name: None,
+        }).collect();
     }
-
-    // Auto-detected fallbacks.
-    let detected = auto_detected_candidates();
-
-    // If a specific profile was requested but not found in settings,
-    // try to match it against auto-detected candidates by id.
-    if let Some(requested_id) = shell_profile_id {
-        if candidates.is_empty() {
-            let requested_lower = requested_id.to_lowercase();
-            for candidate in &detected {
-                // Match by display_name-derived id first, then by shell stem.
-                let derived_id = candidate
-                    .display_name
-                    .as_ref()
-                    .map(|d| display_name_to_id(d));
-                let matches_display = derived_id.as_deref() == Some(&requested_lower);
-                let stem = candidate
-                    .shell
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default()
-                    .to_lowercase();
-                if matches_display || stem == requested_lower {
-                    if seen.insert((candidate.shell.clone(), candidate.display_name.clone())) {
-                        candidates.push(ShellCandidate {
-                            shell: candidate.shell.clone(),
-                            args: candidate.args.clone(),
-                            display_name: candidate.display_name.clone(),
-                        });
-                    }
-                    break;
-                }
-            }
+    let profiles = extract_profiles(config);
+    let default_id = extract_default_profile(config);
+    let selected = requested.or_else(|| (!default_id.is_empty()).then_some(default_id.as_str()));
+    let detected = auto_detected_candidates(); // Local inspection; never probes WSL.
+    if let Some(id) = selected {
+        if let Some(profile) = profiles.iter().find(|p| p.id == id) {
+            return vec![ShellCandidate {
+                shell: PathBuf::from(&profile.command), args: profile.args.clone(), display_name: None,
+            }];
         }
+        // Discovered distro profiles are saved before selection. Unknown explicit
+        // profiles fail in their pane, never silently choose another shell.
+        return detected.into_iter().filter(|c| {
+            let derived = c.display_name.as_ref().map(|d| display_name_to_id(d));
+            derived.as_deref() == Some(id) || c.shell.file_stem()
+                .is_some_and(|stem| stem.to_string_lossy().eq_ignore_ascii_case(id))
+        }).take(1).collect();
     }
-
-    // Append remaining auto-detected fallbacks (deduplicated).
-    for candidate in detected {
-        if seen.insert((candidate.shell.clone(), candidate.display_name.clone())) {
-            candidates.push(candidate);
-        }
-    }
-
-    candidates
+    detected
 }
 
 /// Load and sanitize settings from disk.
@@ -579,26 +526,19 @@ fn extract_default_profile(config: &serde_json::Value) -> String {
 /// Return platform-specific shell candidates via environment inspection.
 ///
 /// This is the fallback chain used when no profiles are configured in
-/// settings, or when all configured profiles fail to resolve.
-/// On Windows, WSL shells are offered after native Windows shells.
+/// settings.
+/// WSL enumeration is deliberately excluded from this launch path.
 pub fn auto_detected_candidates() -> Vec<ShellCandidate> {
     let mut candidates: Vec<ShellCandidate> = Vec::new();
 
     if cfg!(target_os = "windows") {
         // Windows: check custom env, then PowerShell, then pwsh, then
-        // ComSpec, then cmd.exe, then WSL (if available).
+        // ComSpec, then cmd.exe. No external discovery runs here.
         if let Ok(custom) = std::env::var("VIBE99_WINDOWS_SHELL") {
             if !custom.is_empty() {
-                // Special case: "wsl.exe" triggers WSL detection.
-                if custom.eq_ignore_ascii_case("wsl.exe") {
-                    push_wsl_candidates(&mut candidates, None);
-                } else {
-                    candidates.push(ShellCandidate {
-                        shell: PathBuf::from(&custom),
-                        args: vec![],
-                        display_name: None,
-                    });
-                }
+                candidates.push(ShellCandidate {
+                    shell: PathBuf::from(&custom), args: vec![], display_name: None,
+                });
             }
         }
         for shell in &["powershell.exe", "pwsh.exe", "cmd.exe"] {
@@ -617,8 +557,7 @@ pub fn auto_detected_candidates() -> Vec<ShellCandidate> {
                 });
             }
         }
-        // Append WSL candidates after native Windows shells.
-        push_wsl_candidates(&mut candidates, None);
+
     } else {
         // Unix (Linux / macOS): $SHELL first (only if absolute), then
         // platform-specific fallbacks, deduplicated.
@@ -656,50 +595,23 @@ pub fn auto_detected_candidates() -> Vec<ShellCandidate> {
     candidates
 }
 
-/// Append WSL shell candidates to the list — one per detected distribution.
-///
-/// On non-Windows or when WSL is not available this is a no-op.
-/// `distro_override` allows forcing a specific distribution (used by
-/// `VIBE99_WINDOWS_SHELL=wsl.exe`).
-#[cfg(target_os = "windows")]
-fn push_wsl_candidates(candidates: &mut Vec<ShellCandidate>, distro_override: Option<&str>) {
-    if !wsl::is_wsl_available() {
-        return;
-    }
-
-    let default_shell = wsl::detect_wsl_default_shell().unwrap_or_else(|| "/bin/bash".into());
-
-    if let Some(distro) = distro_override {
-        let args = wsl::wsl_shell_args(Some(distro), &default_shell, &["-il".into()]);
-        candidates.push(ShellCandidate {
-            shell: PathBuf::from("wsl.exe"),
-            args,
-            display_name: Some(format!("WSL ({})", distro)),
-        });
-        return;
-    }
-
-    let distros = wsl::list_distributions();
-    for distro in &distros {
-        let args = wsl::wsl_shell_args(Some(distro), &default_shell, &["-il".into()]);
-        candidates.push(ShellCandidate {
-            shell: PathBuf::from("wsl.exe"),
-            args,
-            display_name: Some(format!("WSL ({})", distro)),
-        });
-    }
+/// Optional, bounded discovery, used only by the shell profile picker.
+pub fn wsl_candidates() -> Result<Vec<ShellCandidate>, String> {
+    let distros = wsl::discover_distributions()?;
+    Ok(distros.into_iter().map(|distro| ShellCandidate {
+        shell: wsl::launcher_path().unwrap_or_else(|| PathBuf::from("wsl.exe")),
+        args: vec!["--distribution".into(), distro.clone()],
+        display_name: Some(format!("WSL ({distro})")),
+    }).collect())
 }
-
-#[cfg(not(target_os = "windows"))]
-fn push_wsl_candidates(_candidates: &mut Vec<ShellCandidate>, _distro_override: Option<&str>) {}
 
 /// Build a `CommandBuilder` for a shell candidate. Returns an error if
 /// the candidate binary does not exist or is not executable.
 ///
 /// WSL candidates (shell == "wsl.exe") are handled specially: `wsl.exe`
 /// is verified on the Windows side, but the inner shell (e.g. `/bin/bash`)
-/// is not checked since it lives inside the WSL filesystem. The `cwd` is
-/// converted from Windows to WSL path format when the candidate is WSL.
+/// is not checked since it lives inside the WSL filesystem. The host process
+/// keeps a Windows cwd, which WSL translates when opening the Linux shell.
 fn build_command(candidate: &ShellCandidate, cwd: &Path) -> Result<CommandBuilder, String> {
     let is_wsl = cfg!(target_os = "windows")
         && candidate
@@ -708,19 +620,16 @@ fn build_command(candidate: &ShellCandidate, cwd: &Path) -> Result<CommandBuilde
             .is_some_and(|n| n.eq_ignore_ascii_case("wsl.exe"));
 
     if is_wsl {
-        // Verify wsl.exe exists on the Windows PATH.
-        let wsl_path = which("wsl.exe").ok_or("wsl.exe not found on PATH")?;
-
-        let mut cmd = CommandBuilder::new(&wsl_path);
-        cmd.args(&candidate.args);
-
-        // Convert Windows cwd to WSL path if it looks like a Windows path.
-        let cwd_str = cwd.to_string_lossy();
-        if let Some(wsl_cwd) = wsl::windows_to_wsl_path(&cwd_str) {
-            cmd.cwd(PathBuf::from(&wsl_cwd));
+        let wsl_path = if candidate.shell.is_absolute() && candidate.shell.is_file() {
+            candidate.shell.clone()
         } else {
-            cmd.cwd(cwd);
-        }
+            wsl::launcher_path().ok_or("WSL launcher was not found")?
+        };
+        let mut cmd = CommandBuilder::new(&wsl_path);
+        // CreateProcess needs a Windows cwd. Let wsl.exe translate it; never
+        // pass a Linux /mnt path as the host process working directory.
+        cmd.cwd(cwd);
+        cmd.args(&candidate.args);
 
         // Set WSLENV so WSL forwards selected env vars from Windows.
         let wslenv = wsl::wslenv_value();
@@ -842,4 +751,34 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_executable(path: &Path) -> bool {
     path.is_file()
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_and_default_profiles_never_fall_back() {
+        let config = serde_json::json!({ "shell": {
+            "defaultProfile": "custom-wsl",
+            "profiles": [{ "id": "custom-wsl", "command": "wsl.exe",
+                "args": ["--distribution", "My Linux"] }]
+        }});
+        for requested in [None, Some("custom-wsl")] {
+            let candidates = resolve_shell_candidates(&config, requested);
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].args, ["--distribution", "My Linux"]);
+        }
+        assert!(resolve_shell_candidates(&config, Some("missing-profile")).is_empty());
+        let local = resolve_shell_candidates(&config, Some("__vibe99_local__"));
+        assert!(!local.is_empty());
+        assert!(local.iter().all(|c| c.shell != PathBuf::from("wsl.exe")));
+    }
+
+    #[test]
+    fn default_launch_needs_no_discovery() {
+        let started = std::time::Instant::now();
+        assert!(!resolve_shell_candidates(&serde_json::Value::Null, None).is_empty());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
 }

@@ -1,0 +1,1 @@
+Keep WSL discovery off the application launch and native-shell paths. Discover distributions on request with a bounded background probe, retain usable controls and saved profiles during failure, and offer pane-local shell recovery. Constrain the header layout so its controls remain visible with long tab content.

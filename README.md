@@ -40,7 +40,7 @@ npm run tauri:build
 - **Command palette** — quick tab switching via a searchable palette.
 - **Configurable shortcuts** — keyboard shortcuts can be edited in the settings modal.
 - **Session restore** — pane layout, directories, shell profiles, and tab titles are preserved across restarts.
-- **WSL integration** — auto-detects all installed distributions and creates a shell profile for each one.
+- **WSL integration** — discover installed distributions on request in Settings → Shell Profiles → Discover WSL. Startup and local shells never wait for discovery.
 - **Font selection** — pick any installed monospace font from settings.
 
 ## Controls
@@ -77,9 +77,19 @@ Chromium with `npx playwright install chromium` first. Rust tests run with
 `npm run tauri:build:review` builds **Vibe99 Review** with its own application
 identity and settings. On Windows, run
 `node scripts/test-native-terminal.cjs src-tauri/target/release/vibe99.exe`
-against that build to exercise real PTY
-recovery, flow control, process exit, and session replacement. The PowerShell
+against that build to exercise ordinary startup without a shell override, visible
+header controls, bounded WSL discovery, real PTY recovery, flow control, process
+exit, and session replacement. The PowerShell
 prompt hook can also be checked with `node scripts/test-powershell-integration.cjs`.
+
+WSL discovery runs on a background worker with a three-second process deadline.
+It only lists distributions; it never starts Linux to query the guest shell or
+depends on Windows PATH entries inside Linux. Selecting a discovered profile
+saves its distribution and lets WSL launch that distribution's default shell.
+Discovery errors preserve saved profiles and existing panes. An explicitly
+selected shell that fails stays in its pane with **Retry** and **Use local shell**
+actions. A shell that has not produced output after three seconds offers the
+same actions; the application remains usable while it starts.
 
 ## Platform Defaults And Known Issues
 

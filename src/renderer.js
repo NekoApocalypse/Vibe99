@@ -111,6 +111,7 @@ function createUnavailableBridge() {
     removeShellProfile: fail,
     setDefaultShellProfile: fail,
     detectShellProfiles: () => Promise.resolve([]),
+    detectWslProfiles: () => Promise.resolve([]),
     onTerminalData: () => () => {},
     onTerminalExit: () => () => {},
     onMenuAction: () => () => {},
@@ -200,6 +201,7 @@ function createTauriBridge(tauri) {
     removeShellProfile: (profileId) => invoke('shell_profile_remove', { profileId }),
     setDefaultShellProfile: (profileId) => invoke('shell_profile_set', { profileId }),
     detectShellProfiles: () => invoke('shell_profiles_detect'),
+    detectWslProfiles: () => invoke('shell_profiles_detect_wsl'),
     onTerminalData: (handler) => onTauriEvent('vibe99:terminal-data', handler),
     onTerminalExit: (handler) => onTauriEvent('vibe99:terminal-exit', handler),
     onMenuAction: (handler) => onTauriEvent('vibe99:menu-action', handler),
@@ -350,6 +352,8 @@ const removeTerminalDataListener = bridge.onTerminalData(({ paneId, sessionId, s
   // Output proves that this generation is live even if invoke's reply is still
   // in transit. Let xterm answer startup terminal queries immediately.
   if (!node.sessionEnded) node.sessionReady = true;
+  clearTimeout(node.startupTimer);
+  node.startupNotice.hidden = true;
   node.output.push({ sequence, data });
   paneActivityWatcher.noteData(paneId);
 });
@@ -369,6 +373,11 @@ function handleTerminalExit(node, sessionId, exitCode) {
 
   const paneIndex = getPaneIndex(node.paneId);
   if (paneIndex === -1) {
+    return;
+  }
+
+  if (exitCode !== 0) {
+    showShellNotice(node, `Shell exited with code ${exitCode}. Retry or choose a local shell.`);
     return;
   }
 
@@ -577,19 +586,54 @@ function flushSettingsSave() {
 // ----------------------------------------------------------------
 
 let detectedShellProfiles = [];
+let wslDiscoveryPending = null;
+let wslDiscoveryMessage = 'WSL discovery runs only when requested.';
+
+function mergeDetectedProfiles(profiles) {
+  const known = new Map(detectedShellProfiles.map(p => [p.id, p]));
+  for (const profile of profiles) known.set(profile.id, profile);
+  detectedShellProfiles = [...known.values()];
+  const existing = new Set(shellProfiles.map(p => p.id));
+  shellProfiles.push(...profiles.filter(p => !existing.has(p.id)));
+  renderModalShellProfiles(true);
+}
 
 function loadShellProfiles() {
-  Promise.all([
-    bridge.listShellProfiles(),
-    bridge.detectShellProfiles().catch(() => []),
-  ]).then(([config, detected]) => {
-    detectedShellProfiles = detected;
+  // Saved profiles become available independently of optional discovery.
+  void bridge.listShellProfiles().then(config => {
     const userProfiles = config.profiles ?? [];
     const userIds = new Set(userProfiles.map((p) => p.id));
-    // Merge: user profiles first, then detected ones not already present.
-    shellProfiles = [...userProfiles, ...detected.filter((p) => !userIds.has(p.id))];
+    shellProfiles = [...userProfiles, ...detectedShellProfiles.filter(p => !userIds.has(p.id))];
     defaultShellProfileId = config.defaultProfile ?? '';
+    renderModalShellProfiles(true);
   }).catch(reportError);
+  void bridge.detectShellProfiles().then(mergeDetectedProfiles).catch(reportError);
+}
+
+function updateWslDiscoveryStatus() {
+  const button = document.querySelector('#discover-wsl');
+  const status = document.querySelector('#wsl-discovery-status');
+  if (button) {
+    button.disabled = Boolean(wslDiscoveryPending);
+    button.textContent = wslDiscoveryPending ? 'Discovering WSL…' : 'Discover WSL';
+  }
+  if (status) status.textContent = wslDiscoveryMessage;
+}
+
+function discoverWslProfiles() {
+  if (wslDiscoveryPending) return wslDiscoveryPending;
+  wslDiscoveryMessage = 'Checking installed distributions…';
+  wslDiscoveryPending = bridge.detectWslProfiles().then(profiles => {
+    mergeDetectedProfiles(profiles);
+    wslDiscoveryMessage = profiles.length ? 'WSL profiles are available.' : 'No WSL distributions found.';
+  }).catch(error => {
+    wslDiscoveryMessage = String(error);
+  }).finally(() => {
+    wslDiscoveryPending = null;
+    updateWslDiscoveryStatus();
+  });
+  updateWslDiscoveryStatus();
+  return wslDiscoveryPending;
 }
 
 function createProfileActionButton(label, title, onClick) {
@@ -605,11 +649,20 @@ function createProfileActionButton(label, title, onClick) {
   return btn;
 }
 
-function changePaneShell(paneId, profileId) {
+async function changePaneShell(paneId, profileId) {
   const node = paneNodeMap.get(paneId);
   if (!node) return;
 
-  const previousProfileId = panes.find((p) => p.id === paneId)?.shellProfileId ?? null;
+  const profileChange = Symbol();
+  node.profileChange = profileChange;
+  const detected = detectedShellProfiles.some(p => p.id === profileId);
+  const selectedProfile = shellProfiles.find(p => p.id === profileId);
+  if (detected && selectedProfile) {
+    // Save the exact distro/arguments so future launches need no discovery.
+    try { await bridge.addShellProfile(selectedProfile); }
+    catch (error) { reportError(error); return; }
+    if (node.profileChange !== profileChange || !paneNodeMap.has(paneId)) return;
+  }
 
   panes = panes.map((p) =>
     p.id === paneId ? { ...p, shellProfileId: profileId } : p
@@ -617,18 +670,7 @@ function changePaneShell(paneId, profileId) {
   scheduleSettingsSave();
 
   // A new generation discards old output/exit events and resets emulator modes.
-  const profileChange = Symbol();
-  node.profileChange = profileChange;
-  initializePaneTerminal(node).catch(reportError).finally(() => {
-    if (node.profileChange !== profileChange) return;
-    // Revert profile on failure so the session doesn't persist a broken profile.
-    if (!node.sessionReady) {
-      panes = panes.map((p) =>
-        p.id === paneId ? { ...p, shellProfileId: previousProfileId } : p
-      );
-      scheduleSettingsSave();
-    }
-  });
+  await initializePaneTerminal(node).catch(reportError);
 }
 
 // ----------------------------------------------------------------
@@ -692,6 +734,19 @@ function openShellProfilesModal() {
   overlay._modalShellProfileList = overlay.querySelector('#modal-shell-profile-list');
   overlay._modalShellProfileEditor = overlay.querySelector('#modal-shell-profile-editor');
 
+  if (bridge.platform === 'win32' || bridge.platform === 'windows') {
+    const discovery = document.createElement('div');
+    discovery.className = 'wsl-discovery';
+    const button = createProfileActionButton('Discover WSL', 'Find installed WSL distributions', discoverWslProfiles);
+    button.id = 'discover-wsl';
+    const status = document.createElement('span');
+    status.id = 'wsl-discovery-status';
+    status.setAttribute('role', 'status');
+    discovery.append(button, status);
+    overlay.querySelector('.shell-profiles-modal').append(discovery);
+    updateWslDiscoveryStatus();
+  }
+
   // Select first profile by default if available
   if (shellProfiles.length > 0) {
     const firstProfile = shellProfiles[0];
@@ -711,7 +766,7 @@ function openShellProfilesModal() {
   renderModalShellProfiles();
 }
 
-function renderModalShellProfiles() {
+function renderModalShellProfiles(preserveEditor = false) {
   const overlay = document.querySelector('.settings-modal-overlay');
   if (!overlay || !overlay._modalShellProfileList) return;
 
@@ -721,7 +776,7 @@ function renderModalShellProfiles() {
   if (!listEl || !editorEl) return;
 
   listEl.replaceChildren();
-  editorEl.replaceChildren();
+  if (!preserveEditor) editorEl.replaceChildren();
 
   // Render sidebar list
   if (shellProfiles.length === 0) {
@@ -866,6 +921,9 @@ function renderModalShellProfiles() {
       listEl.appendChild(item);
     }
   }
+
+  // Background discovery must not replace a focused editor or its draft.
+  if (preserveEditor) return;
 
   // Render editor panel
   if (editingShellProfile) {
@@ -1305,6 +1363,18 @@ function createPane(pane) {
     accent: pane.accent,
   };
 
+  const startupNotice = document.createElement('div');
+  startupNotice.className = 'shell-startup-notice';
+  startupNotice.hidden = true;
+  const startupMessage = document.createElement('span');
+  startupMessage.setAttribute('role', 'status');
+  const retry = createProfileActionButton('Retry', 'Restart this shell', () => initializePaneTerminal(node).catch(reportError));
+  const local = createProfileActionButton('Use local shell', 'Open a local shell in this pane', () => changePaneShell(node.paneId, '__vibe99_local__'));
+  startupNotice.append(startupMessage, retry, local);
+  paneEl.append(startupNotice);
+  node.startupNotice = startupNotice;
+  node.startupMessage = startupMessage;
+
   terminalHost.addEventListener('contextmenu', (event) => {
     event.preventDefault();
     focusPane(node.paneId, { focusTerminal: false });
@@ -1393,12 +1463,25 @@ function fitTerminal(node, force = false) {
   node.needsFit = false;
 }
 
+function showShellNotice(node, message) {
+  clearTimeout(node.startupTimer);
+  node.startupMessage.textContent = message;
+  node.startupNotice.hidden = false;
+}
+
 async function initializePaneTerminal(node) {
   const previousSessionId = node.sessionId;
   const sessionId = crypto.randomUUID();
   node.sessionId = sessionId;
   node.sessionReady = false;
   node.sessionEnded = false;
+  clearTimeout(node.startupTimer);
+  node.startupNotice.hidden = true;
+  node.startupTimer = setTimeout(() => {
+    if (node.sessionId === sessionId && paneNodeMap.has(node.paneId)) {
+      showShellNotice(node, 'Waiting for shell output… You can retry or use a local shell.');
+    }
+  }, 3000);
   node.output?.dispose();
   node.output = createTerminalOutput({
     terminal: node.terminal,
@@ -1439,6 +1522,7 @@ async function initializePaneTerminal(node) {
   } catch (error) {
     if (node.sessionId !== sessionId || !paneNodeMap.has(node.paneId)) return;
     const message = error instanceof Error ? error.message : String(error);
+    showShellNotice(node, `Could not start shell: ${message}`);
     node.terminal.writeln(`\x1b[38;5;204mFailed to start shell${profileId ? ` "${profileId}"` : ''}: ${message}\x1b[0m`);
   }
 }
@@ -1449,6 +1533,7 @@ function ensurePaneNodes() {
   for (const [paneId, node] of paneNodeMap.entries()) {
     if (!activeIds.has(paneId)) {
       paneActivityWatcher.forget(paneId);
+      clearTimeout(node.startupTimer);
       node.output?.dispose();
       if (node.sessionId) bridge.destroyTerminal({ paneId, sessionId: node.sessionId }).catch(reportError);
       node.terminal.dispose();
@@ -2801,9 +2886,13 @@ window.addEventListener('resize', () => {
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    await bridge.cwdReady;
-
-    const savedSettings = await bridge.loadSettings();
+    // Static chrome is live before any backend work. A settings read failure
+    // must not prevent the default shell from starting.
+    applySettings();
+    const [, savedSettings] = await Promise.all([
+      bridge.cwdReady,
+      bridge.loadSettings().catch(error => { reportError(error); return {}; }),
+    ]);
     applyPersistedSettings(savedSettings);
     applySettings();
     loadShellProfiles();

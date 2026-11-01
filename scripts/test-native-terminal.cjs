@@ -5,14 +5,19 @@ const { spawn } = require('node:child_process');
 const { resolve } = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const assert = require('node:assert/strict');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 
 (async () => {
   assert(process.argv[2], 'Pass the Vibe99 Review executable path');
   const port = 9237;
-  const child = spawn(resolve(process.argv[2]), [], { windowsHide: true, stdio: 'ignore', env: {
-    ...process.env, VIBE99_WINDOWS_SHELL: 'powershell.exe',
+  const env = {
+    ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
-  } });
+  };
+  delete env.VIBE99_WINDOWS_SHELL;
+  const child = spawn(resolve(process.argv[2]), [], { windowsHide: true, stdio: 'ignore', env });
   let browser, page;
   try {
     for (let i = 0; i < 120; i++) {
@@ -25,6 +30,17 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(() => window.__TAURI__?.core && document.querySelectorAll('.tab').length >= 1);
     const title = await page.evaluate(() => window.__TAURI__.window.getCurrentWindow().title());
     assert(title.includes('Vibe99 Review'), 'Only run native tests against the isolated Review build');
+    const wslChildren = async () => (await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+      `@(Get-CimInstance Win32_Process -Filter "ParentProcessId=${child.pid} AND Name='wsl.exe'").Count`
+    ], { windowsHide: true })).stdout.trim();
+    assert.equal(await wslChildren(), '0', 'Ordinary startup must not launch a WSL probe');
+    for (const id of ['tabs-add', 'tabs-settings', 'tabs-fullscreen']) {
+      assert(await page.locator(`#${id}`).evaluate(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.x >= 0 && r.right <= innerWidth;
+      }), `${id} must be visible within the window`);
+    }
+    console.log('PASS: ordinary Windows startup launches no WSL probes and shows all header controls');
     await page.evaluate(async () => {
       window.__native = { packets: [], exits: [], errors: [], paused: false };
       await window.__TAURI__.event.listen('vibe99:terminal-data', ({ payload: p }) => {
@@ -48,6 +64,20 @@ const assert = require('node:assert/strict');
 
     await create('__test1', 'first');
     await waitText('first', 'PS ');
+    await page.locator('#tabs-settings').click();
+    await page.locator('#shell-profiles-settings-btn').click();
+    await page.locator('#discover-wsl').click();
+    const ipcStart = Date.now();
+    await invoke('get_cwd');
+    assert(Date.now() - ipcStart < 1500, 'WSL discovery must not block window IPC');
+    await write('__test1', 'first', "Write-Output ('DISCOVERY_'+'RESPONSIVE')\r");
+    await waitText('first', 'DISCOVERY_RESPONSIVE');
+    await page.waitForFunction(() => !document.querySelector('#discover-wsl').disabled, null, { timeout: 7000 });
+    const discovery = await page.locator('#wsl-discovery-status').textContent();
+    assert.equal(await wslChildren(), '0', 'Discovery must reap its owned process');
+    await page.screenshot({ path: 'artifacts/native-wsl-discovery.png' });
+    await page.locator('.settings-modal-close').click();
+    console.log(`PASS: local shell and window IPC work during bounded WSL discovery (${discovery})`);
     const startup = await text('first');
     // ConPTY may normalize a combined DECRST to separate mode resets.
     const mouseOff = /\x1b\[\?(?:\d+;)*(?:9|1000|1002|1003)(?:;\d+)*l/;

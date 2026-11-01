@@ -24,6 +24,7 @@ const assert = require('node:assert/strict');
       window.__acks = [];
       window.__resizes = [];
       window.__sessions = new Map();
+      window.__discoveryCalls = 0;
       window.vibe99 = {
         platform: 'win32', defaultCwd: 'C:/test', defaultTabTitle: 'test', cwdReady: Promise.resolve(),
         createTerminal: async p => window.__sessions.set(p.paneId, p.sessionId),
@@ -32,6 +33,8 @@ const assert = require('node:assert/strict');
         resizeTerminal: async p => window.__resizes.push(p), destroyTerminal: async () => {}, closeWindow: async () => {},
         loadSettings: async () => ({}), saveSettings: async () => ({}),
         listShellProfiles: async () => ({ profiles: [], defaultProfile: '' }), detectShellProfiles: async () => [],
+        detectWslProfiles: () => { window.__discoveryCalls++; return new Promise((resolve, reject) => { window.__finishDiscovery = resolve; window.__failDiscovery = reject; }); },
+        addShellProfile: async () => ({}),
         writeClipboardText: async () => {}, readClipboardText: async () => '',
         onTerminalData: handler => { window.__data = handler; return () => {}; },
         onTerminalExit: handler => { window.__exit = handler; return () => {}; },
@@ -48,6 +51,31 @@ const assert = require('node:assert/strict');
     await page.goto('http://127.0.0.1:1421');
     await page.waitForFunction(() => window.__test?.paneNodeMap.size === 3 &&
       [...window.__test.paneNodeMap.values()].every(n => n.sessionReady));
+
+    assert.equal(await page.evaluate(() => window.__discoveryCalls), 0, 'Startup must never discover WSL');
+    for (const width of [1600, 960]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.evaluate(() => window.__emit('\x1b]2;' + 'Long title '.repeat(100) + '\x07'));
+      for (const id of ['tabs-add', 'tabs-settings', 'tabs-fullscreen']) {
+        const rect = await page.locator(`#${id}`).boundingBox();
+        assert(rect && rect.x >= 0 && rect.x + rect.width <= width, `${id} must fit at width ${width}`);
+      }
+    }
+    await page.setViewportSize({ width: 1600, height: 920 });
+    await page.locator('#tabs-settings').click();
+    await page.locator('#shell-profiles-settings-btn').click();
+    await page.locator('#discover-wsl').click();
+    assert(await page.locator('#discover-wsl').isDisabled());
+    await page.locator('.settings-modal-close').click();
+    await page.locator('#tabs-add').click();
+    await page.waitForFunction(() => window.__test.paneNodeMap.size === 4);
+    await page.locator('.tab-close').last().click();
+    await page.evaluate(() => window.__failDiscovery('WSL discovery timed out. Local shells are still available.'));
+    await page.locator('#tabs-settings').click();
+    await page.locator('#shell-profiles-settings-btn').click();
+    assert((await page.locator('#wsl-discovery-status').textContent()).includes('timed out'));
+    await page.locator('.settings-modal-close').click();
+    console.log('PASS: controls stay visible at minimum width; stalled discovery cannot block adding/closing panes');
 
     const replacements = await page.evaluate(async () => {
       const list = document.getElementById('tabs-list');
@@ -146,6 +174,31 @@ const assert = require('node:assert/strict');
     assert((await page.locator('.xterm-rows').textContent()).includes('OUTPUT_AFTER_CONTEXT_LOSS'));
     assert.deepEqual(errors, []);
     console.log('PASS: WebGL context loss falls back to a working terminal renderer');
+
+    await page.evaluate(async () => {
+      const create = window.vibe99.createTerminal;
+      window.vibe99.createTerminal = async payload => {
+        if (payload.shellProfileId === 'broken-wsl') throw Error('WSL unavailable');
+        return create(payload);
+      };
+      await window.__test.changePaneShell('p1', 'broken-wsl');
+    });
+    assert(await page.locator('.shell-startup-notice').isVisible());
+    assert.equal(await page.locator('.tab').count(), 1, 'A shell error must not close the last pane/window');
+    await page.getByRole('button', { name: 'Use local shell', exact: true }).click();
+    await page.waitForFunction(() => window.__test.paneNodeMap.get('p1').sessionReady);
+    await page.evaluate(() => window.__emit('PS C:\\test> '));
+    assert(!(await page.locator('.shell-startup-notice').isVisible()));
+    console.log('PASS: failed explicit shell stays in its pane and can recover to a local shell');
+
+    await page.addInitScript(() => {
+      window.vibe99.loadSettings = async () => { throw Error('Simulated unreadable settings'); };
+    });
+    await page.reload();
+    await page.waitForFunction(() => window.__sessions.size === 3);
+    await page.locator('#tabs-settings').click();
+    assert(await page.locator('#settings-panel').isVisible());
+    console.log('PASS: unreadable settings still allow default terminals and settings controls');
   } finally {
     await browser?.close();
     await server.close();

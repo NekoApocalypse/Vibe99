@@ -93,9 +93,9 @@ fn extract_default_profile(config: &Value) -> String {
 
 /// List all shell profiles and the current default profile id.
 #[tauri::command]
-pub fn shell_profiles_list(app: AppHandle) -> Result<ShellConfig, String> {
-    let (_, shell_config) = read_shell_config(&app)?;
-    Ok(shell_config)
+pub async fn shell_profiles_list(app: AppHandle) -> Result<ShellConfig, String> {
+    tauri::async_runtime::spawn_blocking(move || read_shell_config(&app).map(|(_, config)| config))
+        .await.map_err(|e| e.to_string())?
 }
 
 /// Set the default shell profile by `profile_id`.
@@ -226,8 +226,18 @@ pub fn shell_profile_remove(app: AppHandle, profile_id: String) -> Result<ShellC
 /// that are not necessarily in the user's settings. The frontend can
 /// merge them into the profile list so users can see and select them.
 #[tauri::command]
-pub fn shell_profiles_detect() -> Vec<ShellProfile> {
-    let candidates = crate::pty::auto_detected_candidates();
+pub async fn shell_profiles_detect() -> Result<Vec<ShellProfile>, String> {
+    tauri::async_runtime::spawn_blocking(|| profiles_from_candidates(crate::pty::auto_detected_candidates()))
+        .await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn shell_profiles_detect_wsl() -> Result<Vec<ShellProfile>, String> {
+    tauri::async_runtime::spawn_blocking(|| crate::pty::wsl_candidates().map(profiles_from_candidates))
+        .await.map_err(|e| e.to_string())?
+}
+
+fn profiles_from_candidates(candidates: Vec<crate::pty::ShellCandidate>) -> Vec<ShellProfile> {
     let mut profiles = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
 

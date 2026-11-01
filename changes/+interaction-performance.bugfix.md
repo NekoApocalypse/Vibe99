@@ -1,0 +1,1 @@
+Switch tabs immediately while preserving double-click rename, avoid redundant focus renders and shortcut-bar rebuilds, batch drag updates and resize measurements, and animate pane movement and activity alerts without repeated layout or shadow repaint work.

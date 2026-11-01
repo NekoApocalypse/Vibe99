@@ -247,9 +247,9 @@ let nextPaneNumber = panes.length + 1;
 let renamingPaneId = null;
 let isRenderingTabs = false; // Guard against re-entrant renderTabs calls
 let dragState = null;
+let pendingDragRender = null;
 let currentMode = 'terminal'; // 'terminal' | 'nav'
 let enterNavSourcePaneId = null; // Track which pane was focused when entering nav mode
-let pendingTabFocus = null;
 let sessionRestoreComplete = false;
 
 // Mode management
@@ -257,7 +257,7 @@ function setMode(next) {
   if (currentMode === next) return;
   currentMode = next;
   document.body.classList.toggle('is-navigation-mode', currentMode === 'nav');
-  render();
+  // Callers render after completing their focus/mode changes.
 }
 
 // Most-recently-used pane stack for Ctrl+` cycling. Index 0 is the most
@@ -352,8 +352,12 @@ const removeTerminalDataListener = bridge.onTerminalData(({ paneId, sessionId, s
   // Output proves that this generation is live even if invoke's reply is still
   // in transit. Let xterm answer startup terminal queries immediately.
   if (!node.sessionEnded) node.sessionReady = true;
-  clearTimeout(node.startupTimer);
-  node.startupNotice.hidden = true;
+  if (node.startupTimer !== null) {
+    clearTimeout(node.startupTimer);
+    node.startupTimer = null;
+  }
+  // Steady output must not keep mutating the already-hidden startup UI.
+  if (!node.startupNotice.hidden) node.startupNotice.hidden = true;
   node.output.push({ sequence, data });
   paneActivityWatcher.noteData(paneId);
 });
@@ -401,6 +405,7 @@ function reportError(error) {
   const message = error instanceof Error ? error.message : String(error);
   statusLabelEl.textContent = `Error: ${message}`;
   statusHintEl.textContent = '';
+  statusHintKeymap = null;
   console.error(error);
 }
 
@@ -1439,8 +1444,9 @@ function entryNeedsTabRefresh(paneId) {
 }
 
 function fitTerminal(node, force = false) {
-  node.terminal.options.fontSize = settings.fontSize;
-  node.terminal.options.fontFamily = settings.fontFamily || getDefaultFontFamily(bridge.platform);
+  if (node.terminal.options.fontSize !== settings.fontSize) node.terminal.options.fontSize = settings.fontSize;
+  const family = settings.fontFamily || getDefaultFontFamily(bridge.platform);
+  if (node.terminal.options.fontFamily !== family) node.terminal.options.fontFamily = family;
   node.fitAddon.fit();
 
   const cols = Math.max(20, node.terminal.cols || 80);
@@ -1600,11 +1606,12 @@ function syncPaneMruOrder() {
 
 function focusPane(paneId, options = {}) {
   const { focusTerminal = true } = options;
+  const changed = focusedPaneId !== paneId || currentMode !== 'terminal' || paneCycleState !== null;
   paneCycleState = null;
   focusedPaneId = paneId;
   setMode('terminal');
   recordPaneVisit(paneId);
-  render();
+  if (changed) render();
   const node = paneNodeMap.get(paneId);
   if (node && focusTerminal) {
     requestAnimationFrame(() => {
@@ -1642,10 +1649,6 @@ function closePane(index, options = {}) {
     endTabDrag();
   }
 
-  if (closingPane.id === pendingTabFocus?.paneId) {
-    clearPendingTabFocus();
-  }
-
   if (destroyTerminal) {
     const node = paneNodeMap.get(closingPane.id);
     if (node?.sessionId) bridge.destroyTerminal({ paneId: closingPane.id, sessionId: node.sessionId }).catch(reportError);
@@ -1670,7 +1673,6 @@ function beginRenamePane(index) {
     return;
   }
 
-  clearPendingTabFocus();
   renamingPaneId = pane.id;
   try {
     render();
@@ -1701,37 +1703,10 @@ function commitRenamePane(paneId, nextTitle) {
   focusPane(paneId, { focusTerminal: true });
 }
 
-function clearPendingTabFocus() {
-  if (!pendingTabFocus) {
-    return;
-  }
-
-  window.clearTimeout(pendingTabFocus.timerId);
-  pendingTabFocus = null;
-}
-
-function scheduleTabFocus(paneId) {
-  clearPendingTabFocus();
-  pendingTabFocus = {
-    paneId,
-    timerId: window.setTimeout(() => {
-      pendingTabFocus = null;
-      focusPane(paneId);
-    }, 180),
-  };
-}
-
 function activateTabPointerUp(paneId) {
-  if (pendingTabFocus?.paneId === paneId) {
-    clearPendingTabFocus();
-    const paneIndex = panes.findIndex((pane) => pane.id === paneId);
-    if (paneIndex !== -1) {
-      beginRenamePane(paneIndex);
-    }
-    return;
-  }
-
-  scheduleTabFocus(paneId);
+  // Stable tab nodes let the native dblclick handler rename without delaying
+  // every ordinary click to distinguish it from a possible double-click.
+  focusPane(paneId);
 }
 
 function beginTabDrag(index, event) {
@@ -1774,8 +1749,14 @@ function handleTabPointerMove(event) {
   }
 
   dragState.hasMoved = true;
-  dragState.dropIndex = getTabDropIndex(event.clientX);
-  renderTabs();
+  if (pendingDragRender === null) {
+    pendingDragRender = requestAnimationFrame(() => {
+      pendingDragRender = null;
+      if (!dragState) return;
+      dragState.dropIndex = getTabDropIndex(dragState.currentX);
+      renderTabs();
+    });
+  }
 }
 
 function handleTabPointerUp(event) {
@@ -1783,7 +1764,9 @@ function handleTabPointerUp(event) {
     return;
   }
 
-  const { paneId, dropIndex, hasMoved } = dragState;
+  const { paneId, hasMoved } = dragState;
+  // Pointer-up can precede the scheduled frame; use its final position.
+  const dropIndex = hasMoved ? getTabDropIndex(event.clientX) : dragState.dropIndex;
   endTabDrag();
 
   if (!hasMoved) {
@@ -1800,6 +1783,8 @@ function handleTabPointerUp(event) {
 }
 
 function endTabDrag() {
+  if (pendingDragRender !== null) cancelAnimationFrame(pendingDragRender);
+  pendingDragRender = null;
   dragState = null;
   document.body.classList.remove('is-dragging-tabs');
   window.removeEventListener('pointermove', handleTabPointerMove);
@@ -1911,7 +1896,7 @@ function renderPanes(refit = false) {
     node.root.classList.toggle('is-focused', isFocused);
     node.root.classList.toggle('is-navigation-target', isFocused && currentMode === 'nav');
     node.root.style.setProperty('--pane-accent', accentColor);
-    node.root.style.left = `${left}px`;
+    node.root.style.transform = `translateX(${left}px)`;
     node.root.style.zIndex = String(index + 1);
     node.root.style.height = `${stageHeight}px`;
 
@@ -1919,11 +1904,13 @@ function renderPanes(refit = false) {
       node.terminal.options.theme = createTerminalTheme(accentColor);
       node.accent = accentColor;
     }
-
-    if (refit || node.needsFit) {
-      fitTerminal(node);
-    }
   });
+  // Commit all pane geometry before the fit addon reads layout. Alternating
+  // writes and measurements forces a layout pass for each pane on resize.
+  for (const pane of panes) {
+    const node = paneNodeMap.get(pane.id);
+    if (refit || node.needsFit) fitTerminal(node);
+  }
 }
 
 function render(refit = false) {
@@ -2523,22 +2510,24 @@ function cancelNavigationMode() {
   }
 }
 
+let statusHintKeymap = null;
+let statusHintMode = null;
+
 function updateStatus() {
   const focusedPane = panes[getFocusedIndex()];
   const focusedPaneLabel = getPaneLabel(focusedPane) || focusedPane.id;
 
   // Use the hint bar system
   const keymap = ShortcutsRegistry.getActiveKeymap();
-  const { modeLabel, hintsHtml } = renderHintBar(
-    keymap,
-    currentMode,
-    focusedPaneLabel,
-    bridge.platform
-  );
-
-  statusLabelEl.textContent = modeLabel;
+  const modeLabel = currentMode === 'nav' ? 'Navigation Mode' : focusedPaneLabel;
+  if (statusLabelEl.textContent !== modeLabel) statusLabelEl.textContent = modeLabel;
   statusLabelEl.classList.toggle('is-navigation-mode', currentMode === 'nav');
-  statusHintEl.innerHTML = hintsHtml;
+  if (statusHintKeymap !== keymap || statusHintMode !== currentMode) {
+    const { hintsHtml } = renderHintBar(keymap, currentMode, focusedPaneLabel, bridge.platform);
+    statusHintEl.innerHTML = hintsHtml;
+    statusHintKeymap = keymap;
+    statusHintMode = currentMode;
+  }
 }
 
 // ---------------------------------------------------------------------------

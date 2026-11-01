@@ -7,7 +7,7 @@ export function createTerminalOutput({ terminal, acknowledge, onError }) {
   let disposed = false;
 
   function schedule() {
-    if (!disposed && !writing && timer === null) timer = setTimeout(flush, 0);
+    if (!disposed && queue.length && !writing && timer === null) timer = setTimeout(flush, 0);
   }
 
   function flush() {

@@ -17,7 +17,16 @@ const assert = require('node:assert/strict');
     await page.route('**/renderer.js', async route => {
       const response = await route.fetch();
       await route.fulfill({ response, body: await response.text() +
-        '\nwindow.__test = { paneNodeMap, renderTabs, beginRenamePane, changePaneShell, recoverMouseInput, getPanes: () => panes, reorder: () => { panes.reverse(); renderTabs(); } };' });
+        `
+        const originalRender = render, originalTabs = renderTabs;
+        window.__renderCalls = 0; window.__tabRenderCalls = 0;
+        render = (...args) => { window.__renderCalls++; return originalRender(...args); };
+        renderTabs = (...args) => { window.__tabRenderCalls++; return originalTabs(...args); };
+        window.__test = { paneNodeMap, renderTabs, beginRenamePane, changePaneShell, recoverMouseInput,
+          focusPane, enterNavigationMode, updateStatus, shortcuts: ShortcutsRegistry,
+          getFocused: () => focusedPaneId, getPanes: () => panes,
+          reorder: () => { panes.reverse(); renderTabs(); } };
+        ` });
     });
     await page.addInitScript(() => {
       window.__writes = [];
@@ -51,6 +60,75 @@ const assert = require('node:assert/strict');
     await page.goto('http://127.0.0.1:1421');
     await page.waitForFunction(() => window.__test?.paneNodeMap.size === 3 &&
       [...window.__test.paneNodeMap.values()].every(n => n.sessionReady));
+
+    await page.evaluate(() => {
+      const tab = document.querySelector('[data-pane-id="p2"] .tab-main');
+      const rect = tab.getBoundingClientRect();
+      const props = { bubbles: true, button: 0, pointerId: 99, clientX: rect.x + 30, clientY: rect.y + 12 };
+      tab.dispatchEvent(new PointerEvent('pointerdown', props));
+      window.dispatchEvent(new PointerEvent('pointerup', props));
+    });
+    assert.equal(await page.evaluate(() => window.__test.getFocused()), 'p2', 'Tab switches at pointer-up without a double-click timer');
+    await page.locator('[data-pane-id="p2"] .tab-main').dblclick();
+    assert(await page.locator('.tab-input').isVisible(), 'Native double-click must still rename');
+    await page.locator('.tab-input').press('Escape');
+
+    assert.deepEqual(await page.evaluate(() => {
+      window.__test.enterNavigationMode();
+      window.__renderCalls = 0;
+      window.__test.focusPane('p1');
+      const modeRenders = window.__renderCalls;
+      const hint = document.querySelector('#status-hint').firstChild;
+      window.__renderCalls = 0;
+      for (let i = 0; i < 100; i++) window.__test.focusPane('p1');
+      for (let i = 0; i < 10; i++) window.__test.focusPane(i % 2 ? 'p1' : 'p2');
+      return { modeRenders, renders: window.__renderCalls, sameHints: hint === document.querySelector('#status-hint').firstChild };
+    }), { modeRenders: 1, renders: 10, sameHints: true });
+    await page.evaluate(() => {
+      window.__test.shortcuts.updateKeyboardShortcut('recover-mouse', { key: 'r', modifiers: ['ctrl', 'shift'] });
+      window.__test.updateStatus();
+    });
+    assert((await page.locator('#status-hint').textContent()).includes('Ctrl+Shift+R'));
+    await page.evaluate(() => { window.__test.shortcuts.resetShortcutsToDefaults(); window.__test.updateStatus(); });
+    console.log('PASS: immediate tab selection, native double-click rename, single focus render and cached shortcut hints');
+
+    const dragResult = await page.evaluate(async () => {
+      const tab = document.querySelector('[data-pane-id="p1"] .tab-main');
+      const rect = tab.getBoundingClientRect();
+      const props = { bubbles: true, button: 0, pointerId: 100, clientX: rect.x + 30, clientY: rect.y + 12 };
+      tab.dispatchEvent(new PointerEvent('pointerdown', props));
+      window.__tabRenderCalls = 0;
+      for (let i = 0; i < 100; i++) window.dispatchEvent(new PointerEvent('pointermove', { ...props, clientX: 180 + i }));
+      const immediate = window.__tabRenderCalls;
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const frame = window.__tabRenderCalls;
+      // End at a different slot before the next drag frame can run.
+      window.dispatchEvent(new PointerEvent('pointermove', { ...props, clientX: 600 }));
+      window.dispatchEvent(new PointerEvent('pointerup', { ...props, clientX: 600 }));
+      const order = window.__test.getPanes().map(p => p.id);
+      // Restore the original order for the remaining interaction scenarios.
+      tab.dispatchEvent(new PointerEvent('pointerdown', { ...props, clientX: 330 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { ...props, clientX: 5 }));
+      window.dispatchEvent(new PointerEvent('pointerup', { ...props, clientX: 5 }));
+      return { immediate, frame, order };
+    });
+    assert.deepEqual(dragResult, { immediate: 0, frame: 1, order: ['p2', 'p3', 'p1'] });
+    assert.deepEqual(await page.evaluate(() => window.__test.getPanes().map(p => p.id)), ['p1', 'p2', 'p3']);
+    console.log('PASS: 100 drag moves coalesce into one frame and pointer-up uses the final drop position');
+
+    const streaming = await page.evaluate(async () => {
+      const node = window.__test.paneNodeMap.get('p1');
+      let mutations = 0;
+      const observer = new MutationObserver(records => { mutations += records.length; });
+      observer.observe(node.startupNotice, { attributes: true });
+      for (let i = 0; i < 1000; i++) window.__data({ paneId: 'p1', sessionId: node.sessionId, sequence: i, data: 'x' });
+      await new Promise(resolve => node.output.finish(resolve));
+      observer.disconnect();
+      return { mutations, columns: node.terminal.cols, rows: node.terminal.rows };
+    });
+    assert.equal(streaming.mutations, 0, 'Output must not mutate the startup overlay for every chunk');
+    assert(streaming.columns > 0 && streaming.rows > 0);
+    console.log('PASS: 1000 output chunks parse without repeated startup-overlay DOM mutations');
 
     assert.equal(await page.evaluate(() => window.__discoveryCalls), 0, 'Startup must never discover WSL');
     for (const width of [1600, 960]) {

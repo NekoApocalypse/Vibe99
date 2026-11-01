@@ -91,6 +91,12 @@ selected shell that fails stays in its pane with **Retry** and **Use local shell
 actions. A shell that has not produced output after three seconds offers the
 same actions; the application remains usable while it starts.
 
+Run `node scripts/benchmark-ui.cjs` for a repeatable renderer performance sample:
+eight panes with 5,000 lines each, repeated focus operations, animated pane
+switches, and background activity alerts. It reports click latency, layout work,
+and paint events. An optional output filename saves the measurements as JSON.
+Compare runs on the same machine; these timings are diagnostics, not CI limits.
+
 ## Platform Defaults And Known Issues
 
 - Terminal font defaults are platform-aware: `Consolas` on Windows, `Menlo` on macOS, and `DejaVu Sans Mono` on Linux.

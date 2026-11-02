@@ -1,0 +1,14 @@
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <msi-file path="Vibe99_${version}_x64_en-US.msi">
+      <!-- Exactly one application. Do not sign arbitrary bundled third-party DLLs. -->
+      <pe-file path="**/vibe99.exe" product-name="Vibe99" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+      <authenticode-sign />
+    </msi-file>
+  </zip-file>
+</artifact-configuration>

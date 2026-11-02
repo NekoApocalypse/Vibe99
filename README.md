@@ -118,3 +118,9 @@ Compare runs on the same machine; these timings are diagnostics, not CI limits.
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Code signing policy
+
+Windows code signing is being prepared through SignPath Foundation; approval is
+pending and v0.7.3 and earlier Windows releases are unsigned. See the
+[Code signing policy](./CODE_SIGNING.md) for scope, maintainer roles, and privacy.

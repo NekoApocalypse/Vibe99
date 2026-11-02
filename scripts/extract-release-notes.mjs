@@ -29,4 +29,4 @@ if (!releaseNotes) {
   process.exit(1);
 }
 
-process.stdout.write(`${releaseNotes}\n`);
+process.stdout.write(`${releaseNotes}\n\n[Code signing policy](https://github.com/NekoApocalypse/Vibe99/blob/main/CODE_SIGNING.md)\n`);

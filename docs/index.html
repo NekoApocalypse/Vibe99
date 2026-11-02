@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vibe99 — Desktop Terminal Workspace for Multi-Agent Coding | 多 Agent 终端工作台</title>
+  <meta name="description" content="Vibe99 is a fast, native Tauri 2 desktop terminal workspace built for agentic coding: one focused pane at full width, peripheral vision on all your background coding agents.">
+  <meta name="keywords" content="Vibe99, multi-agent terminal, agentic coding, terminal multiplexer, Tauri terminal, Claude Code workspace, Codex terminal, AI coding terminal">
+  <link rel="canonical" href="https://nekoapocalypse.github.io/Vibe99/">
+  <meta property="og:title" content="Vibe99 — Desktop Terminal Workspace for Agentic Coding">
+  <meta property="og:description" content="One focused pane at full width, peripheral vision on the rest. Built with Tauri 2 and Rust for running multiple coding agents.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://nekoapocalypse.github.io/Vibe99/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/assets/icons/icon.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Vibe99",
+    "operatingSystem": "Windows, Linux, macOS",
+    "applicationCategory": "DeveloperApplication",
+    "description": "Desktop terminal workspace built for running multiple coding agents with one focused pane and peripheral vision on the rest.",
+    "url": "https://nekoapocalypse.github.io/Vibe99/",
+    "downloadUrl": "https://github.com/NekoApocalypse/Vibe99/releases",
+    "codeRepository": "https://github.com/NekoApocalypse/Vibe99",
+    "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+    "softwareVersion": "0.7.3"
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #79c0ff;
+      --btn-bg: #238636;
+      --btn-hover: #2ea043;
+      --btn-sec-bg: #21262d;
+      --btn-sec-hover: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .hero img.logo {
+      width: 88px;
+      height: 88px;
+      border-radius: 18px;
+    }
+    .lang-switch {
+      margin-top: 12px;
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+    .lang-switch a {
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .lang-switch a:hover {
+      text-decoration: underline;
+    }
+    h1 {
+      font-size: 2.25rem;
+      margin: 16px 0 12px;
+      letter-spacing: -0.02em;
+    }
+    .cta-bar {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 24px 0 32px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn-primary {
+      background: var(--btn-bg);
+      color: #ffffff;
+      border: 1px solid rgba(240, 246, 252, 0.1);
+    }
+    .btn-primary:hover {
+      background: var(--btn-hover);
+    }
+    .btn-secondary {
+      background: var(--btn-sec-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: var(--btn-sec-hover);
+    }
+    .demo-shot {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin: 20px 0 28px;
+      display: block;
+    }
+    h2 {
+      font-size: 1.5rem;
+      margin-top: 36px;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    p {
+      margin: 14px 0;
+    }
+    ul, ol {
+      padding-left: 24px;
+    }
+    li {
+      margin: 10px 0;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+      background: rgba(110, 118, 129, 0.25);
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+    }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    th {
+      background: var(--surface);
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      color: var(--accent-hover);
+      text-decoration: underline;
+    }
+    .section-divider {
+      margin: 56px 0 40px;
+      border: 0;
+      border-top: 1px solid var(--border);
+    }
+    .footer-links {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.92rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <img class="logo" src="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/assets/icons/icon.png" alt="Vibe99">
+      <div class="lang-switch">
+        <a href="#cn">中文</a> | <strong><a href="#en">English</a></strong>
+      </div>
+      <h1>Vibe99</h1>
+      <div class="cta-bar">
+        <a class="btn btn-primary" href="https://github.com/NekoApocalypse/Vibe99/releases">Download Latest Release (v0.7.3)</a>
+        <a class="btn btn-secondary" href="https://github.com/NekoApocalypse/Vibe99">View on GitHub</a>
+      </div>
+    </header>
+
+    <section id="en">
+      <p>One developer now runs four or five coding agents at once. Traditional terminals give you two bad choices: tabs hide background agents until you forget they finished, while split grids shrink every pane until you cannot read any of them.</p>
+      <p><strong>Vibe99</strong> is a desktop terminal workspace built for <strong>one focused pane, peripheral vision on the rest</strong>. You read and command one agent at full width, while the others stay stacked on screen so you can see every session move at a glance.</p>
+
+      <p>一个人同时跑四五个 Coding Agent 已经是常态。但传统终端只有两种糟糕的选择：切标签页会把后台 Agent 彻底藏起来，跑完了也忘看；十字分屏又把每个窗口挤成豆腐块，哪一个都看不清。</p>
+      <p>所以我做了 <strong>Vibe99</strong>——一个按 <strong>「一主聚焦、余光巡视」</strong> 设计的 Agent 终端工作台。当前操作的终端永远保持全宽可读，其余终端层叠在侧，所有 Agent 的动静尽收眼底。</p>
+
+      <img class="demo-shot" src="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif" alt="Vibe99 workspace">
+
+      <ul>
+        <li><strong>Stacked layout at a glance.</strong> Your active terminal stays wide and readable in the foreground while background panes stack along the edges. You can always see which agents are still streaming output and which ones are waiting for your next prompt.</li>
+        <li><strong>High-contrast palette to lock onto any agent visually.</strong> Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.</li>
+        <li><strong>Fully customizable UI.</strong> Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.</li>
+        <li><strong>Full keyboard control, zero mouse required.</strong> Cycle recent panes with <code>Ctrl+Tab</code>, step left or right with <code>Ctrl+Left</code> and <code>Ctrl+Right</code>, fuzzy-search tabs via the command palette (<code>Ctrl+Shift+O</code>), or enter Vim-style navigation mode (<code>Ctrl+B</code>) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.</li>
+        <li><strong>Native Tauri 2 + Rust performance.</strong> Powered by Tauri 2 and WebGL-accelerated rendering in a <strong>~5 MiB</strong> native installer. Launches fast, stays light on memory, and automatically restores your pane layout, working directories, and tab titles on restart.</li>
+        <li><strong>Power features for multi-agent workflows.</strong> Optional <strong>breathing alerts</strong> softly pulse a background pane when its output finishes settling; <strong>customizable Shell Profiles</strong> let you configure and switch shells per pane; and <strong>Windows WSL integration</strong> discovers your installed Linux distributions in one click.</li>
+      </ul>
+
+      <h2>Getting started</h2>
+      <ol>
+        <li><strong>Download a release.</strong> Windows (<code>.msi</code>, <code>-setup.exe</code>) and Linux (<code>.deb</code>, <code>.AppImage</code>, <code>.rpm</code>) installers are published on <a href="https://github.com/NekoApocalypse/Vibe99/releases">GitHub Releases</a>.</li>
+        <li><strong>Preferred for source builds: let your agent do it.</strong> Copy <code>https://github.com/NekoApocalypse/Vibe99</code> into your coding agent (Claude Code, Codex, Antigravity, or OpenCode) and ask it to build and launch Vibe99.</li>
+        <li><strong>Build it yourself.</strong> Requires Node.js 22+ and a stable Rust toolchain.
+          <pre><code>npm ci
+npm run tauri:dev</code></pre>
+          To package native release installers for your platform:
+          <pre><code>npm run tauri:build</code></pre>
+        </li>
+      </ol>
+
+      <h2>Controls</h2>
+      <table>
+        <thead>
+          <tr><th>Shortcut</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Ctrl+N</code> (<code>Cmd+N</code> on macOS)</td><td>Open a new terminal pane</td></tr>
+          <tr><td><code>Ctrl+Tab</code> / <code>Ctrl+Shift+Tab</code></td><td>Cycle through recently visited panes</td></tr>
+          <tr><td><code>Ctrl+Left</code> / <code>Ctrl+Right</code></td><td>Move focus to the adjacent pane on the left or right</td></tr>
+          <tr><td><code>Ctrl+Shift+O</code> (<code>Cmd+Shift+O</code>)</td><td>Open the command palette and jump to any pane by title</td></tr>
+          <tr><td><code>Ctrl+B</code></td><td>Enter navigation mode (<code>H</code>/<code>L</code> or arrows to move, <code>1</code>–<code>9</code> to jump, <code>N</code> new, <code>R</code> rename, <code>X</code> close, <code>Enter</code> focus)</td></tr>
+          <tr><td><code>Ctrl+Shift+C</code> / <code>Ctrl+Shift+V</code></td><td>Copy or paste in the focused terminal</td></tr>
+          <tr><td><code>Ctrl+Shift+M</code></td><td>Recover mouse input after an interrupted SSH or TUI session</td></tr>
+        </tbody>
+      </table>
+      <p>Double-click any tab to rename it, drag tabs to reorder panes, or right-click a tab to switch its shell profile, color, or activity alert. All shortcuts can be customized under <strong>Settings → Keyboard Shortcuts</strong>.</p>
+
+      <h2>Limitations</h2>
+      <ul>
+        <li><strong>Release platforms:</strong> Prebuilt installers target <strong>Windows (x64)</strong> and <strong>Linux (x86_64)</strong>. <strong>macOS</strong> users can build and run from source (<code>npm run tauri:build</code>), as prebuilt macOS artifacts are paused until Apple signing and notarization are worth the cost.</li>
+        <li><strong>Windows code signing:</strong> SignPath Foundation onboarding is in progress (<a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CODE_SIGNING.md">Code signing policy</a>). Releases up to <code>v0.7.3</code> are unsigned and may show a Windows SmartScreen prompt on first launch.</li>
+        <li><strong>Out of scope:</strong> Code editors, file trees, Git GUIs, and remote agent daemons. Vibe99 is a fast, focused terminal workspace for running and supervising agents—pair it with <a href="https://github.com/NekoApocalypse/owlet">Owlet</a> when you want a fast reader and editor for the files your agents produce.</li>
+      </ul>
+    </section>
+
+    <hr class="section-divider">
+
+    <section id="cn">
+      <h2>Vibe99 — 多 Agent 终端工作台</h2>
+      <ul>
+        <li><strong>层叠布局，一览无余</strong>：主窗口大宽度居中清晰呈现，其余终端层叠排布在视野两侧，不用来回切窗口也能一眼看清每个 Agent 是在跑任务还是在等指令。</li>
+        <li><strong>高辨识度调色盘，用视觉锁定 Agent</strong>：内置 Okabe-Ito 高对比度调色盘，每个面板的标签页与背景蒙版都带有专属主题色，多开窗口时靠直觉和颜色就能瞬间锁定目标 Agent。</li>
+        <li><strong>UI 全面可调</strong>：主面板宽度、终端透明度、后台蒙版浓度，以及本机任意等宽字体均可自由调节，按你的屏幕尺寸与阅读习惯定制最舒服的视野。</li>
+        <li><strong>丰富的快捷键支持，纯键盘也能行云流水</strong>：支持 <code>Ctrl+Tab</code> 按最近访问切换、<code>Ctrl+Left</code> / <code>Ctrl+Right</code> 左右平移、<code>Ctrl+Shift+O</code> 呼出命令面板模糊搜索，或按 <code>Ctrl+B</code> 进入导航模式（<code>H</code>/<code>L</code> 移动、数字键 <code>1</code>–<code>9</code> 直达、新建/重命名/关闭面板），所有快捷键均支持自定义。</li>
+        <li><strong>Tauri 2 + Rust 原生轻量体验</strong>：基于 Tauri 2 与 WebGL 硬件加速渲染打造，原生安装包仅 <strong>~5 MiB</strong>，启动快、内存占用低、滚屏丝滑，重启后自动恢复面板布局、工作目录与标签页标题。</li>
+        <li><strong>更多贴合多 Agent 的进阶功能</strong>：支持<strong>呼吸灯提醒</strong>（后台 Agent 输出结束静止后柔光闪烁提示）、<strong>Shell Profiles 管理</strong>（按面板自由切换或定制不同终端环境）以及 <strong>Windows WSL 支持</strong>（一键探测并接入本机已安装的 Linux 发行版）。</li>
+      </ul>
+
+      <h2>快速开始</h2>
+      <ol>
+        <li><strong>直接下载安装包。</strong> 前往 <a href="https://github.com/NekoApocalypse/Vibe99/releases">GitHub Releases</a> 下载 Windows（<code>.msi</code>、<code>-setup.exe</code>）或 Linux（<code>.deb</code>、<code>.AppImage</code>、<code>.rpm</code>）安装包。</li>
+        <li><strong>从源码构建（推荐交给你的 Agent）。</strong> 把仓库地址 <code>https://github.com/NekoApocalypse/Vibe99</code> 丢给你常用的 Coding Agent（Claude Code、Codex、Antigravity、OpenCode 等），让它直接构建并启动 Vibe99。</li>
+        <li><strong>手动构建。</strong> 环境要求：Node.js 22+ · Rust stable 工具链。
+          <pre><code>npm ci
+npm run tauri:dev</code></pre>
+          打包当前平台的原生安装包：
+          <pre><code>npm run tauri:build</code></pre>
+        </li>
+      </ol>
+
+      <h2>常用快捷键</h2>
+      <table>
+        <thead>
+          <tr><th>快捷键</th><th>功能</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Ctrl+N</code>（macOS 为 <code>Cmd+N</code>）</td><td>新建终端面板</td></tr>
+          <tr><td><code>Ctrl+Tab</code> / <code>Ctrl+Shift+Tab</code></td><td>按最近访问记录在面板间切换</td></tr>
+          <tr><td><code>Ctrl+Left</code> / <code>Ctrl+Right</code></td><td>向左 / 向右切换到相邻面板</td></tr>
+          <tr><td><code>Ctrl+Shift+O</code>（<code>Cmd+Shift+O</code>）</td><td>打开命令面板，模糊搜索标题并跳转</td></tr>
+          <tr><td><code>Ctrl+B</code></td><td>进入导航模式（<code>H</code>/<code>L</code> 或方向键移动，<code>1</code>–<code>9</code> 直达，<code>N</code> 新建，<code>R</code> 重命名，<code>X</code> 关闭，<code>Enter</code> 聚焦）</td></tr>
+          <tr><td><code>Ctrl+Shift+C</code> / <code>Ctrl+Shift+V</code></td><td>在当前终端内复制 / 粘贴</td></tr>
+          <tr><td><code>Ctrl+Shift+M</code></td><td>SSH 或 TUI 异常中断后一键恢复鼠标输入状态</td></tr>
+        </tbody>
+      </table>
+
+      <h2>当前局限</h2>
+      <ul>
+        <li><strong>平台安装包</strong>：目前提供 <strong>Windows (x64)</strong> 与 <strong>Linux (x86_64)</strong> 预编译安装包。<strong>macOS</strong> 预编译包在 Apple 签名与公证成本划算前暂停发布，macOS 用户可直接从源码构建运行（<code>npm run tauri:build</code>）。</li>
+        <li><strong>Windows 代码签名</strong>：正在接入 SignPath Foundation 开源签名（详见 <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CODE_SIGNING.md">Code Signing Policy</a>）。<code>v0.7.3</code> 及更早版本的 Windows 安装包尚未签名，首次运行可能触发系统 SmartScreen 提示。</li>
+        <li><strong>不做的功能</strong>：内置代码编辑器、文件树、Git 图形界面或远端常驻守护进程。Vibe99 专注于让你高效并行操控多个终端 Agent——如果你需要极速审阅和编辑 Agent 产出的文档与代码，推荐配合 <a href="https://github.com/NekoApocalypse/owlet">Owlet</a> 一起使用。</li>
+      </ul>
+    </section>
+
+    <footer class="footer-links">
+      <a href="https://github.com/NekoApocalypse/Vibe99/releases">Releases</a> ·
+      <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CHANGELOG.md">Changelog</a> ·
+      <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CONTRIBUTING.md">Contributing</a> ·
+      <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CODE_SIGNING.md">Code Signing Policy</a> ·
+      <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/LICENSE">GPL-3.0-or-later License</a> ·
+      <a href="https://github.com/NekoApocalypse/Vibe99">GitHub</a>
+    </footer>
+  </main>
+</body>
+</html>

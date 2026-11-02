@@ -2,6 +2,28 @@
 
 <!-- towncrier release notes start -->
 
+## 0.8.0 - 2026-11-03
+
+### Added
+
+- Open local and remote Markdown paths from terminal output as ordinary document panes, with code highlighting, math, Mermaid diagrams, local images, automatic refresh, and inline retry. New panes insert immediately after the source tab, then move and close independently using the existing pane layout and transparency settings. The MD button and command palette also accept a file path.
+- Read remote Markdown through independent SSH file connections using existing noninteractive authentication and known hosts. Connections close with their document panes; heartbeat timeouts clean up disconnected remote helpers without installing a permanent server.
+- Terminal file previews can infer an existing simple SSH connection from the owned Windows process tree. Complex or ambiguous connections request an explicit mapping instead of silently discarding SSH options.
+
+### Fixed
+
+- Fix stale link targets when terminal output replaces a hovered Markdown path or hyperlink while the pointer is outside the pane. Returning to the same row now resolves the current destination, including OSC8 links in SSH output.
+- Recovering mouse input now suppresses leftover alternate-screen wheel arrows only in the affected pane. A confirmed local PowerShell prompt restores a leftover alternate screen without moving the cursor on ordinary prompts. External HTTP(S) links open without the unsupported dialog-confirm command. The complete intermittent sleep/tmux/agy scroll incident remains under investigation.
+
+### Documentation
+
+- Rewrite the README in a bilingual (EN/CN) format modeled after Owlet, and add a GitHub Pages site (`docs/`) with release and repository links for Google Search Console indexing.
+
+### Misc
+
+- Prepare SignPath Foundation onboarding with a public code signing policy and a manually dispatched Windows MSI signing and verification workflow. Production signing remains unavailable until Foundation approval and credential setup.
+
+
 ## 0.7.3 - 2026-11-01
 
 ### Fixed

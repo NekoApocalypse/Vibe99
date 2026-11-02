@@ -1,1 +1,0 @@
-Prepare SignPath Foundation onboarding with a public code signing policy and a manually dispatched Windows MSI signing and verification workflow. Production signing remains unavailable until Foundation approval and credential setup.

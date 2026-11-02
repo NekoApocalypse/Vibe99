@@ -1,0 +1,18 @@
+@import './preview-workspace.css';
+
+.preview-document { min-width: 0; }
+.preview-document-header {
+  display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
+  min-height: 39px; padding: 6px 12px; border-bottom: 1px solid var(--preview-border);
+}
+.preview-document-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.preview-document :is(.preview-document-close, .preview-document-retry) {
+  flex: 0 0 auto; border: 1px solid transparent; border-radius: 4px;
+  padding: 3px 7px; background: transparent; color: var(--preview-muted); font: inherit; font-size: 11px; cursor: pointer;
+}
+.preview-document :is(.preview-document-close, .preview-document-retry):hover { background: #263637; color: #f4f1e8; }
+.preview-document-status { display: flex; align-items: center; gap: 12px; padding: 9px 16px; color: var(--preview-muted); font-size: 12px; overflow-wrap: anywhere; }
+.preview-document-status > span { flex: 1 1 auto; min-width: 0; }
+.preview-document-status.is-error { color: #f6b6a5; background: #2b211e; }
+.preview-document .preview-document-retry { border-color: #855e50; color: #f4f1e8; }
+.preview-document .markdown-preview { padding-top: 24px; }

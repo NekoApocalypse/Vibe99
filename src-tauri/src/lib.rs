@@ -1,5 +1,8 @@
 pub mod commands;
-pub mod pty;
 mod output_flow;
+pub mod pty;
 mod shell_integration;
+pub mod workspace;
 pub mod wsl;
+
+pub mod terminal_context;

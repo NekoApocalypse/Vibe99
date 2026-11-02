@@ -17,7 +17,8 @@ One developer now runs four or five coding agents at once. Traditional terminals
 - **High-contrast palette to lock onto any agent visually.** Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.
 - **Fully customizable UI.** Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.
 - **Full keyboard control, zero mouse required.** Cycle recent panes with `Ctrl+Tab`, step left or right with `Ctrl+Left` and `Ctrl+Right`, fuzzy-search tabs via the command palette (`Ctrl+Shift+O`), or enter Vim-style navigation mode (`Ctrl+B`) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.
-- **Native Tauri 2 + Rust performance.** Powered by Tauri 2 and WebGL-accelerated rendering in a **~5 MiB** native installer. Launches fast, stays light on memory, and automatically restores your pane layout, working directories, and tab titles on restart.
+- **Read agent-generated Markdown in a pane.** Click a Markdown path in terminal output to open a document pane immediately to its right, then drag, focus, and close it like any other pane. Local files and simple existing SSH sessions work automatically; see [file preview details and limits](docs/preview-workspaces.md).
+- **Native Tauri 2 + Rust performance.** Powered by Tauri 2 and WebGL-accelerated rendering. Launches fast, stays light on memory, and automatically restores your terminal pane layout, working directories, and tab titles on restart.
 - **Power features for multi-agent workflows.** Optional **breathing alerts** softly pulse a background pane when its output finishes settling; **customizable Shell Profiles** let you configure and switch shells per pane; and **Windows WSL integration** discovers your installed Linux distributions in one click.
 
 ## Getting started
@@ -56,7 +57,7 @@ Double-click any tab to rename it, drag tabs to reorder panes, or right-click a 
 ## Limitations
 
 - **Release platforms:** Prebuilt installers target **Windows (x64)** and **Linux (x86_64)**. **macOS** users can build and run from source (`npm run tauri:build`), as prebuilt macOS artifacts are paused until Apple signing and notarization are worth the cost.
-- **Windows code signing:** SignPath Foundation onboarding is in progress ([Code signing policy](CODE_SIGNING.md)). Releases up to `v0.7.3` are unsigned and may show a Windows SmartScreen prompt on first launch.
+- **Windows code signing:** SignPath Foundation onboarding is in progress ([Code signing policy](CODE_SIGNING.md)). Current Windows releases are unsigned and may show a Windows SmartScreen prompt on first launch.
 - **Out of scope:** Code editors, file trees, Git GUIs, and remote agent daemons. Vibe99 is a fast, focused terminal workspace for running and supervising agents—pair it with [Owlet](https://github.com/NekoApocalypse/owlet) when you want a fast reader and editor for the files your agents produce.
 
 [Releases](https://github.com/NekoApocalypse/Vibe99/releases) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Code Signing Policy](CODE_SIGNING.md)

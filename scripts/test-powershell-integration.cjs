@@ -16,10 +16,19 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
   // A native failure must still be visible to an existing custom prompt.
   const suffix = `cmd.exe /c exit 7; prompt; cmd.exe /c exit 0; prompt`;
   const plain = run(customPrompt + '\n' + suffix);
-  const wrapped = run(customPrompt + '\n' + init + '\n' + suffix);
+  const token = 'test-session-token';
+  const marker = '\x1b]633;Vibe99Prompt;' + token + '\x07';
+  const wrapped = run(customPrompt + `\n$env:VIBE99_PROMPT_TOKEN = '${token}'\n` + init + '\n' + suffix);
   assert.equal(wrapped.status, 0, wrapped.stderr);
   assert.equal(wrapped.stdout.split(reset).length - 1, 2, 'Every local prompt must reset reporting');
-  assert.equal(wrapped.stdout.split(reset).join(''), plain.stdout, 'Custom prompt and exit status must be preserved');
+  assert.equal(wrapped.stdout.split(marker).length - 1, 2, 'Every original-shell prompt must carry the session marker');
+  const cwdReports = wrapped.stdout.match(/\x1b\]7;file:[^\x07]*\x07/g) || [];
+  assert.equal(cwdReports.length, 2, 'Each local prompt reports its current filesystem directory');
+  assert.equal(wrapped.stdout.split(reset).join('').split(marker).join('').replace(/\x1b\]7;[^\x07]*\x07/g, ''), plain.stdout, 'Custom prompt and exit status must be preserved');
+  const inherited = run(`$env:VIBE99_PROMPT_TOKEN = '${token}'\n` + init +
+    `\nif (Test-Path Env:\\VIBE99_PROMPT_TOKEN) { throw 'Prompt token leaked to children' };\n` +
+    `& '${shell}' -NoLogo -NoProfile -Command 'if ($env:VIBE99_PROMPT_TOKEN) { exit 3 }; exit 0'`);
+  assert.equal(inherited.status, 0, inherited.stderr);
   console.log(`PASS: ${shell} ${probe.stdout.trim()} prompt recovery preserves custom prompt and command status`);
   tested++;
 }

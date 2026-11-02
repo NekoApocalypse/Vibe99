@@ -5,12 +5,20 @@ use std::path::Path;
 // Invoke the existing prompt first so it sees the previous command's status.
 const POWERSHELL_INIT: &str = r#"
 if (Test-Path Function:\prompt) {
-    $global:__Vibe99OriginalPrompt = $function:prompt
-    function global:prompt {
-        $vibe99Prompt = & $global:__Vibe99OriginalPrompt
+    $vibe99OriginalPrompt = $function:prompt
+    $vibe99PromptToken = $env:VIBE99_PROMPT_TOKEN
+    Remove-Item Env:\VIBE99_PROMPT_TOKEN -ErrorAction SilentlyContinue
+    $function:global:prompt = {
+        $vibe99Prompt = & $vibe99OriginalPrompt
         [Console]::Write(([char]27).ToString() + '[?9;1000;1002;1003;1004;1006;1016l')
+        if ($vibe99PromptToken -match '^[a-zA-Z0-9-]{1,128}$') {
+            [Console]::Write(([char]27).ToString() + ']633;Vibe99Prompt;' + $vibe99PromptToken + [char]7)
+            if ($PWD.Provider.Name -eq 'FileSystem') {
+                [Console]::Write(([char]27).ToString() + ']7;' + ([Uri]$PWD.Path).AbsoluteUri + [char]7)
+            }
+        }
         $vibe99Prompt
-    }
+    }.GetNewClosure()
 }
 "#;
 

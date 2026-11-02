@@ -79,6 +79,20 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run unit tests
+        run: npm test
+
+      - name: Install browser for link regression tests
+        run: npx --no-install playwright install chromium
+
+      - name: Verify current links after terminal redraws
+        env:
+          VIBE99_TEST_BROWSER: chromium
+        run: npm run test:link-cache
+
+      - name: Run Rust tests
+        run: cargo test --locked --release --manifest-path src-tauri/Cargo.toml --lib
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

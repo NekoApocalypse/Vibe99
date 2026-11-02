@@ -19,7 +19,12 @@ import { createActions } from './input/actions.js';
 import { createDispatcher } from './input/dispatcher.js';
 import { renderHintBar } from './hint-bar.js';
 import { createTerminalOutput } from './terminal-output.mjs';
-import { encodeTerminalInput, RESET_MOUSE_MODES } from './terminal-input.mjs';
+import { encodeTerminalInput } from './terminal-input.mjs';
+import { createTerminalRecovery } from './terminal-recovery.mjs';
+import { normalizeExternalUrl } from './external-links.mjs';
+import { parseFileReference, registerTerminalFileLinks } from './terminal-file-links.mjs';
+import { previewDirname } from './preview-paths.js';
+import { askPreviewDetails } from './preview-prompt.js';
 import projectDefaults from './default-settings.json';
 
 function getRuntimePlatform() {
@@ -104,6 +109,9 @@ function createUnavailableBridge() {
     writeClipboardText: fail,
     getClipboardSnapshot: () => ({ text: '', hasImage: false }),
     openExternalUrl: fail,
+    terminalPreviewContext: () => Promise.resolve({kind: 'unknown'}),
+    workspaceOpen: fail, workspaceRequest: fail, workspaceClose: fail,
+    onWorkspaceEvent: () => () => {},
     showContextMenu: fail,
     loadSettings: () => Promise.resolve({}),
     saveSettings: () => Promise.resolve({}),
@@ -127,7 +135,7 @@ function createTauriBridge(tauri) {
     tauri.clipboardManager;
   const { openUrl } = tauri.opener;
 
-  const listenersReady = [];
+  const listenersReady = new Set();
   const terminalStarts = new Map();
   const terminalWrites = new Map();
   const terminalResizes = new Map();
@@ -140,8 +148,9 @@ function createTauriBridge(tauri) {
   }
   function onTauriEvent(event, handler) {
     const unlisten = tauri.event.listen(event, (e) => handler(e.payload));
-    listenersReady.push(unlisten);
-    return () => unlisten.then((fn) => fn());
+    listenersReady.add(unlisten);
+    unlisten.then(() => listenersReady.delete(unlisten), () => listenersReady.delete(unlisten));
+    return () => unlisten.then((fn) => fn()).catch(reportError);
   }
 
   // Resolve the real CWD from the Tauri backend so the initial tab title
@@ -194,6 +203,17 @@ function createTauriBridge(tauri) {
       }
     },
     openExternalUrl: (url) => openUrl(url),
+    terminalPreviewContext: payload => invoke('terminal_preview_context', payload),
+    workspaceOpen: async (payload) => {
+      await Promise.all(listenersReady);
+      return invoke('workspace_open', payload);
+    },
+    workspaceRequest: async (payload) => {
+      await Promise.all(listenersReady);
+      return invoke('workspace_request', payload);
+    },
+    workspaceClose: (payload) => invoke('workspace_close', payload),
+    onWorkspaceEvent: (handler) => onTauriEvent('vibe99:workspace-event', handler),
     showContextMenu: () => {},
     loadSettings: () => invoke('settings_load'),
     saveSettings: (payload) => invoke('settings_save', { settings: payload }),
@@ -282,6 +302,7 @@ const tabsListEl = document.getElementById('tabs-list');
 const statusLabelEl = document.getElementById('status-label');
 const statusHintEl = document.getElementById('status-hint');
 const addPaneButtonEl = document.getElementById('tabs-add');
+const addPreviewButtonEl = document.getElementById('tabs-preview');
 const settingsButtonEl = document.getElementById('tabs-settings');
 const fullscreenButtonEl = document.getElementById('tabs-fullscreen');
 const settingsPanelEl = document.getElementById('settings-panel');
@@ -391,15 +412,16 @@ function reportError(error) {
 }
 
 function getPreviewWidth(stageWidth, count) {
+  const paneWidth = Math.min(settings.paneWidth, stageWidth);
   if (count <= 1) {
     return 0;
   }
 
-  if (stageWidth >= settings.paneWidth * count) {
-    return settings.paneWidth;
+  if (stageWidth >= paneWidth * count) {
+    return paneWidth;
   }
 
-  return (stageWidth - settings.paneWidth) / (count - 1);
+  return (stageWidth - paneWidth) / (count - 1);
 }
 
 function getPaneLabel(pane) {
@@ -479,15 +501,18 @@ function applyPersistedSettings(nextSettings) {
 }
 
 function buildSessionData() {
-  const focusedIndex = getFocusedIndex();
+  const selected = panes[getFocusedIndex()];
+  const savedPanes = panes.filter(p => p.kind !== 'preview');
+  const focusedIndex = savedPanes.findIndex(p => p.id === selected?.id);
   return {
-    panes: panes.map((p) => ({
+    panes: savedPanes.map((p) => ({
       title: p.title,
       cwd: p.cwd,
       accent: p.accent,
       customColor: p.customColor,
       shellProfileId: p.shellProfileId,
       breathingMonitor: p.breathingMonitor !== false,
+      kind: p.kind === 'preview' ? 'preview' : 'terminal',
     })),
     focusedPaneIndex: focusedIndex >= 0 ? focusedIndex : 0,
   };
@@ -495,11 +520,12 @@ function buildSessionData() {
 
 function restoreSession(session) {
   const validPanes = (session.panes ?? [])
-    .filter((p) => p && typeof p.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(p.accent))
+    .filter((p) => p && p.kind !== 'preview' && typeof p.accent === 'string' && /^#[0-9a-fA-F]{6}$/.test(p.accent))
     .map((p, index) => ({
       id: `p${index + 1}`,
       title: (typeof p.title === 'string' && p.title) || null,
-      terminalTitle: bridge.defaultTabTitle,
+      terminalTitle: p.kind === 'preview' ? 'Markdown' : bridge.defaultTabTitle,
+      kind: p.kind === 'preview' ? 'preview' : 'terminal',
       cwd: (typeof p.cwd === 'string' && p.cwd) || bridge.defaultCwd,
       accent: p.accent,
       customColor: (typeof p.customColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(p.customColor) && p.customColor) || undefined,
@@ -637,7 +663,7 @@ function createProfileActionButton(label, title, onClick) {
 
 async function changePaneShell(paneId, profileId) {
   const node = paneNodeMap.get(paneId);
-  if (!node) return;
+  if (!node || node.kind === 'preview') return;
 
   const profileChange = Symbol();
   node.profileChange = profileChange;
@@ -1103,7 +1129,98 @@ function handleTerminalLinkActivation(event, uri) {
 
   event.preventDefault();
   event.stopPropagation();
-  void bridge.openExternalUrl(uri).catch(reportError);
+  void openSafeExternalUrl(uri).catch(reportError);
+}
+
+async function openSafeExternalUrl(uri) {
+  const safe = normalizeExternalUrl(uri);
+  if (!safe) throw new Error('Only HTTP and HTTPS links can open in a browser.');
+  return bridge.openExternalUrl(safe);
+}
+
+function handlePaneLink(paneId, event, uri) {
+  const reference = parseFileReference(uri);
+  if (!reference) return handleTerminalLinkActivation(event, uri);
+  event.preventDefault(); event.stopPropagation();
+  void openFileBesidePane(paneId, reference).catch(reportError);
+}
+
+async function promptPreviewFile() {
+  const focused = panes[getFocusedIndex()];
+  const sourceId = focused?.id;
+  if (!sourceId) return;
+  const value = await askPreviewDetails({ title: 'Preview a file', message: 'File links in the terminal open here directly.',
+    fields: [{ name: 'path', label: 'File', placeholder: 'path/to/plan.md', required: true }] });
+  if (!value) return;
+  const reference = parseFileReference(value.path);
+  if (!reference) { reportError(new Error('Choose a Markdown file path.')); return; }
+  if (focused?.kind === 'preview' && focused.documentLocation) {
+    let location = { ...focused.documentLocation, path: reference.path };
+    if (reference.scheme === 'vscode-remote' && reference.authority) location = { target: reference.authority, root: previewDirname(reference.path), path: reference.path };
+    else if (/^[a-z]:/i.test(reference.path)) location = { target: null, root: previewDirname(reference.path), path: reference.path };
+    await insertDocumentPane(sourceId, location);
+  } else await openFileBesidePane(sourceId, reference);
+}
+
+async function openFileBesidePane(sourceId, reference) {
+  const node = paneNodeMap.get(sourceId);
+  if (!node?.terminal) return;
+  if (node.previewResolving) { node.queuedPreviewReference = reference; return; }
+  node.previewResolving = true;
+  const sessionId = node.sessionId;
+  const contextEpoch = node.previewContextEpoch;
+  const valid = () => paneNodeMap.get(sourceId) === node && node.sessionId === sessionId && node.previewContextEpoch === contextEpoch;
+  try {
+    const path = reference.path;
+    const windowsPath = /^[a-z]:[\\/]/i.test(path) || path.startsWith('\\\\');
+    const absolute = windowsPath || path.startsWith('/');
+    let location;
+    if (reference.scheme === 'vscode-remote' && reference.authority) {
+      location = { target: reference.authority, root: previewDirname(path), path };
+    } else if (windowsPath) {
+      location = { target: null, root: previewDirname(path), path };
+    } else {
+      const context = node.previewMapping ? { kind: 'mapped' } : node.detectedPreviewContext || await bridge.terminalPreviewContext({ paneId: sourceId, sessionId }).catch(() => ({ kind: 'unknown' }));
+      if (!valid()) return;
+      if (context.kind === 'local' || context.kind === 'ssh') node.detectedPreviewContext = context;
+      const mapping = node.previewMapping;
+      const hint = node.directoryHint;
+      if (mapping) location = { ...mapping, path };
+      else if (context.kind === 'ssh' && !reference.authority && (absolute || hint?.path?.startsWith('/'))) {
+        location = { target: context.target, root: absolute ? previewDirname(path) : hint.path, path };
+      } else if (context.kind === 'local' && !reference.authority && !(bridge.platform === 'win32' && path.startsWith('/'))) {
+        location = { target: null, root: absolute ? previewDirname(path) : node.cwd, path };
+      } else {
+        const value = await askPreviewDetails({ title: 'Locate this pane’s files',
+          message: 'This terminal has not supplied enough file context. Remember this location until it returns to the local prompt.',
+          fields: [
+            { name: 'target', label: 'SSH host (leave empty for local files)', value: context.target || reference.authority || '', placeholder: 'user@host or SSH alias' },
+            { name: 'root', label: 'Working folder', value: absolute ? previewDirname(path) : hint?.path || '', placeholder: '/path/to/project', required: true },
+          ] });
+        if (!value || !valid()) return;
+        const target = value.target.trim() || null, root = value.root.trim();
+        if (target && (target.startsWith('-') || /\s/.test(target))) throw new Error('Use a configured SSH alias or user@host.');
+        node.previewMapping = { target, root };
+        location = { ...node.previewMapping, path };
+      }
+    }
+    if (!valid()) return;
+    await insertDocumentPane(sourceId, location);
+  } finally {
+    node.previewResolving = false;
+    const queued = node.queuedPreviewReference; node.queuedPreviewReference = null;
+    if (queued && valid()) void openFileBesidePane(sourceId, queued).catch(reportError);
+  }
+}
+
+async function insertDocumentPane(sourceId, location) {
+  const index = panes.findIndex(p => p.id === sourceId);
+  if (index < 0) return;
+  const documentPane = { ...createPaneData(), kind: 'preview', terminalTitle: 'Document', documentLocation: location };
+  panes = [...panes.slice(0, index + 1), documentPane, ...panes.slice(index + 1)];
+  focusedPaneId = documentPane.id; recordPaneVisit(documentPane.id); render(true);
+  const node = paneNodeMap.get(documentPane.id), reader = await node?.ready;
+  if (reader && paneNodeMap.get(documentPane.id) === node) void reader.open(location);
 }
 
 function getFocusedIndex() {
@@ -1116,9 +1233,9 @@ function getFocusedIndex() {
   return panes.length > 0 ? 0 : -1;
 }
 
-function getPaneLeft(index, previewWidth, focusedIndex) {
-  if (previewWidth >= settings.paneWidth) {
-    return index * settings.paneWidth;
+function getPaneLeft(index, previewWidth, focusedIndex, paneWidth = settings.paneWidth) {
+  if (previewWidth >= paneWidth) {
+    return index * paneWidth;
   }
 
   const focusedLeft = focusedIndex * previewWidth;
@@ -1131,7 +1248,7 @@ function getPaneLeft(index, previewWidth, focusedIndex) {
     return focusedLeft;
   }
 
-  return focusedLeft + settings.paneWidth + (index - focusedIndex - 1) * previewWidth;
+  return focusedLeft + paneWidth + (index - focusedIndex - 1) * previewWidth;
 }
 
 function getTextColorForBackground(hexColor) {
@@ -1281,6 +1398,12 @@ function createPane(pane) {
     lineHeight: 1.2,
     scrollback: 5000,
     theme: createTerminalTheme(accentColor),
+    linkHandler: {
+      allowNonHttpProtocols: true,
+      activate: (event, uri) => handlePaneLink(pane.id, event, uri),
+      hover: (_event, uri) => node.fileLinks?.setExplicitReference(parseFileReference(uri)),
+      leave: () => node.fileLinks?.setExplicitReference(null),
+    },
   });
   const fitAddon = new FitAddon();
   const webLinksAddon = new WebLinksAddon(handleTerminalLinkActivation);
@@ -1348,6 +1471,27 @@ function createPane(pane) {
     needsFit: true,
     accent: pane.accent,
   };
+  node.recovery = createTerminalRecovery({ terminal, getSessionId: () => node.sessionId,
+    onLocalPrompt: () => { node.previewMapping = null; node.detectedPreviewContext = null; node.directoryHint = null; node.previewContextEpoch = (node.previewContextEpoch || 0) + 1; } });
+  node.fileLinks = registerTerminalFileLinks(terminal, reference => { void openFileBesidePane(pane.id, reference).catch(reportError); });
+  node.directoryListener = terminal.parser.registerOscHandler(7, value => {
+    try {
+      const uri = new URL(value);
+      if (uri.protocol === 'file:') {
+        let path = decodeURIComponent(uri.pathname);
+        if (/^\/[a-z]:\//i.test(path)) path = path.slice(1);
+        node.directoryHint = { path, host: uri.hostname };
+        if (/^[a-z]:[\\/]/i.test(path)) {
+          node.cwd = path;
+          const current = panes.find(p => p.id === pane.id); if (current) current.cwd = path;
+        }
+      }
+    } catch {}
+    return true;
+  });
+  terminal.attachCustomWheelEventHandler(node.recovery.handleWheel);
+  node.focus = () => terminal.focus();
+  node.blur = () => terminal.blur();
 
   const startupNotice = document.createElement('div');
   startupNotice.className = 'shell-startup-notice';
@@ -1368,11 +1512,13 @@ function createPane(pane) {
   });
 
   terminal.onData((data) => {
+    node.recovery.classifyInput(data);
     if (node.sessionReady) {
       bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data }).catch(reportError);
     }
   });
   terminal.onBinary((data) => {
+    node.recovery.classifyInput(data);
     if (node.sessionReady) {
       bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data, binary: true }).catch(reportError);
     }
@@ -1419,12 +1565,41 @@ function createPane(pane) {
   return node;
 }
 
+function createPreviewPane(pane) {
+  const root = document.createElement('article');
+  root.className = 'pane pane-preview';
+  root.style.setProperty('--pane-accent', pane.customColor || pane.accent);
+  const host = document.createElement('div'); host.className = 'preview-pane-host';
+  host.textContent = 'Opening document…'; root.append(host);
+  root.addEventListener('pointerdown', () => focusPane(pane.id, { focusTerminal: false }));
+  const node = { kind: 'preview', paneId: pane.id, root, accent: pane.accent, needsFit: true, workspace: null,
+    focus: () => node.workspace?.focus(), blur: () => node.workspace?.blur() };
+  node.ready = import('./preview-document.js').then(({createPreviewDocument}) => {
+    if (paneNodeMap.get(pane.id) !== node) return null;
+    host.textContent = '';
+    node.workspace = createPreviewDocument({ container: host, workspaceId: 'document-' + crypto.randomUUID(),
+      api: { open: p => bridge.workspaceOpen(p), request: p => bridge.workspaceRequest(p),
+        close: p => bridge.workspaceClose(p), onEvent: h => bridge.onWorkspaceEvent(h) },
+      openExternalUrl: openSafeExternalUrl,
+      onTitle(title) { const entry = panes.find(p => p.id === pane.id); if (entry) { entry.terminalTitle = title; scheduleTitleRender(pane.id); } },
+      onClose: () => closePane(panes.findIndex(p => p.id === pane.id)) });
+    node.workspace.setCloseEnabled(panes.length > 1);
+    return node.workspace;
+  }).catch(error => { if (paneNodeMap.get(pane.id) === node) host.textContent = 'Could not open document: ' + String(error); reportError(error); return null; });
+  return node;
+}
+
 function entryNeedsTabRefresh(paneId) {
   const pane = panes.find((entry) => entry.id === paneId);
   return Boolean(pane && pane.title === null);
 }
 
 function fitTerminal(node, force = false) {
+  if (node.kind === 'preview') {
+    node.workspace?.resize();
+    node.needsFit = false;
+    return;
+  }
   if (node.terminal.options.fontSize !== settings.fontSize) node.terminal.options.fontSize = settings.fontSize;
   const family = settings.fontFamily || getDefaultFontFamily(bridge.platform);
   if (node.terminal.options.fontFamily !== family) node.terminal.options.fontFamily = family;
@@ -1461,6 +1636,7 @@ async function initializePaneTerminal(node) {
   const sessionId = crypto.randomUUID();
   node.sessionId = sessionId;
   node.sessionReady = false;
+  node.previewMapping = null; node.detectedPreviewContext = null; node.directoryHint = null;
   node.sessionEnded = false;
   clearTimeout(node.startupTimer);
   node.startupNotice.hidden = true;
@@ -1471,7 +1647,7 @@ async function initializePaneTerminal(node) {
   }, 3000);
   node.output?.dispose();
   node.output = createTerminalOutput({
-    terminal: node.terminal,
+    terminal: { write: node.recovery.write },
     acknowledge: (sequence) => bridge.acknowledgeTerminal({ paneId: node.paneId, sessionId, sequence }),
     onError: reportError,
   });
@@ -1522,8 +1698,12 @@ function ensurePaneNodes() {
       paneActivityWatcher.forget(paneId);
       clearTimeout(node.startupTimer);
       node.output?.dispose();
+      node.recovery?.dispose();
+      node.fileLinks?.dispose();
+      node.directoryListener?.dispose();
+      node.workspace?.dispose();
       if (node.sessionId) bridge.destroyTerminal({ paneId, sessionId: node.sessionId }).catch(reportError);
-      node.terminal.dispose();
+      node.terminal?.dispose();
       node.root.remove();
       paneNodeMap.delete(paneId);
     }
@@ -1531,12 +1711,12 @@ function ensurePaneNodes() {
 
   for (const pane of panes) {
     if (!paneNodeMap.has(pane.id)) {
-      const node = createPane(pane);
+      const node = pane.kind === 'preview' ? createPreviewPane(pane) : createPane(pane);
       paneNodeMap.set(pane.id, node);
       stageEl.append(node.root);
       paneActivityWatcher.setPaneEnabled(pane.id, pane.breathingMonitor !== false);
       requestAnimationFrame(() => {
-        if (paneNodeMap.get(pane.id) === node) initializePaneTerminal(node).catch(reportError);
+        if (paneNodeMap.get(pane.id) === node && pane.kind !== 'preview') initializePaneTerminal(node).catch(reportError);
       });
     }
   }
@@ -1596,13 +1776,16 @@ function focusPane(paneId, options = {}) {
   const node = paneNodeMap.get(paneId);
   if (node && focusTerminal) {
     requestAnimationFrame(() => {
-      node.terminal.focus();
+      node.focus();
     });
   }
 }
 
-function addPane() {
+function addPane(kind = 'terminal') {
+  if (kind === 'preview') { void promptPreviewFile(); return; }
   const newPane = createPaneData();
+  newPane.kind = kind;
+  if (kind === 'preview') newPane.terminalTitle = 'Markdown';
   paneCycleState = null;
   panes = [...panes, newPane];
   focusedPaneId = newPane.id;
@@ -1613,9 +1796,7 @@ function addPane() {
 function closePane(index, options = {}) {
   const { destroyTerminal = true } = options;
 
-  if (panes.length === 1) {
-    return;
-  }
+  if (panes.length === 1) return;
 
   const closingPane = panes[index];
   if (!closingPane) {
@@ -1635,8 +1816,8 @@ function closePane(index, options = {}) {
     if (node?.sessionId) bridge.destroyTerminal({ paneId: closingPane.id, sessionId: node.sessionId }).catch(reportError);
   }
 
-  const remainingPanes = panes.filter((_, paneIndex) => paneIndex !== index);
-  if (closingPane.id === focusedPaneId) {
+  const remainingPanes = panes.filter(p => p.id !== closingPane.id);
+  if (!remainingPanes.some(p => p.id === focusedPaneId)) {
     const fallbackIndex = Math.max(0, index - 1);
     focusedPaneId = remainingPanes[fallbackIndex]?.id ?? remainingPanes[0]?.id ?? null;
   }
@@ -1867,10 +2048,14 @@ function renderPanes(refit = false) {
 
   ensurePaneNodes();
   paneActivityWatcher.setFocus(focusedPaneId);
+  const width = Math.min(settings.paneWidth, stageWidth);
 
   panes.forEach((pane, index) => {
     const node = paneNodeMap.get(pane.id);
-    const left = getPaneLeft(index, previewWidth, focusedIndex);
+    const left = getPaneLeft(index, previewWidth, focusedIndex, width);
+    if (node.layoutWidth !== width) { node.layoutWidth = width; node.needsFit = true; }
+    node.root.style.width = width + 'px';
+    node.workspace?.setCloseEnabled(panes.length > 1);
     const isFocused = index === focusedIndex;
     const accentColor = pane.customColor || pane.accent;
 
@@ -1882,7 +2067,7 @@ function renderPanes(refit = false) {
     node.root.style.height = `${stageHeight}px`;
 
     if (node.accent !== accentColor) {
-      node.terminal.options.theme = createTerminalTheme(accentColor);
+      if (node.terminal) node.terminal.options.theme = createTerminalTheme(accentColor);
       node.accent = accentColor;
     }
   });
@@ -1978,7 +2163,7 @@ function cycleToRecentPane({ reverse = false } = {}) {
   const node = paneNodeMap.get(targetId);
   if (node) {
     requestAnimationFrame(() => {
-      node.terminal.focus();
+      node.focus();
     });
   }
 }
@@ -2005,7 +2190,8 @@ function getPaneIndex(paneId) {
 }
 
 function getPaneNode(paneId) {
-  return paneNodeMap.get(paneId) ?? null;
+  const node = paneNodeMap.get(paneId);
+  return (node?.kind === 'preview' ? node.workspace?.getTerminal?.() : node) ?? null;
 }
 
 async function getClipboardSnapshot() {
@@ -2053,7 +2239,7 @@ async function pasteIntoTerminal(paneId = focusedPaneId, options = {}) {
     return false;
   }
 
-  if (bridge.platform === 'win32') {
+  if (bridge.platform === 'win32' || paneNodeMap.get(paneId)?.kind === 'preview') {
     node.terminal.paste(text);
   } else {
     bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data: text }).catch(reportError);
@@ -2182,12 +2368,22 @@ function hideContextMenu() {
 
 function recoverMouseInput(paneId = focusedPaneId) {
   const node = paneNodeMap.get(paneId);
+  if (node?.kind === 'preview') return node.workspace?.getTerminal?.()?.recoverMouseInput();
   if (!node?.output) return;
   // Drain already received output first so an older DECSET cannot undo recovery.
   node.output.finish(() => {
-    node.terminal.write(RESET_MOUSE_MODES);
-    node.terminal.focus();
+    node.recovery.recover(() => node.terminal.focus());
   });
+}
+
+function wheelDiagnosticItems(paneId) {
+  const target = getPaneNode(paneId);
+  const recording = (target?.recovery ?? target)?.diagnosticsEnabled?.();
+  return [
+    { label: recording ? 'Stop wheel diagnostics' : 'Record wheel diagnostics',
+      action: 'wheel-diagnostics-toggle', disabled: !target },
+    { label: 'Copy wheel diagnostics', action: 'wheel-diagnostics-copy', disabled: !target },
+  ];
 }
 
 function dismissContextMenuOnOutside(event) {
@@ -2222,6 +2418,7 @@ async function showTerminalContextMenu(node, event) {
     { label: 'Select All', action: 'terminal-select-all', shortcut: '⌘A' },
     { label: 'Recover Mouse Input', action: 'terminal-recover-mouse',
       shortcut: ShortcutsRegistry.formatShortcut(ShortcutsRegistry.getKeyboardShortcuts()['recover-mouse'], bridge.platform) },
+    ...wheelDiagnosticItems(node.paneId),
   ];
 
   if (shellChildren.length > 0) {
@@ -2252,6 +2449,7 @@ function showTabContextMenu(paneId, event) {
     { label: 'Change Color...', action: 'tab-change-color' },
     { label: 'Recover Mouse Input', action: 'terminal-recover-mouse',
       shortcut: ShortcutsRegistry.formatShortcut(ShortcutsRegistry.getKeyboardShortcuts()['recover-mouse'], bridge.platform) },
+    ...wheelDiagnosticItems(paneId),
     { type: 'separator' },
     { label: 'Rename Tab', action: 'tab-rename' },
     { label: 'Close Tab', action: 'tab-close', disabled: panes.length <= 1 },
@@ -2367,8 +2565,20 @@ function openTabSwitcher() {
     accent: pane.customColor || pane.accent,
   }));
 
-  openCommandPalette(items, focusPane, {
-    placeholder: 'Switch tab by title…',
+  items.push({ id: 'command:markdown', label: 'Preview a file from this pane', accent: '#61afef' });
+  const activePreview = paneNodeMap.get(focusedPaneId)?.workspace;
+  if (activePreview) {
+    items.push({ id: 'command:refresh-preview', label: 'Refresh Markdown preview', accent: '#61afef' });
+
+  }
+
+  openCommandPalette(items, (id) => {
+    if (id === 'command:markdown') addPane('preview');
+    else if (id === 'command:refresh-preview') activePreview?.refresh();
+
+    else focusPane(id);
+  }, {
+    placeholder: 'Switch tab or open Markdown…',
     emptyText: 'No matching tabs',
   });
 }
@@ -2389,6 +2599,18 @@ async function pasteImageIntoTerminal(paneId = focusedPaneId, options = {}) {
 }
 
 function handleMenuAction(action, paneId) {
+  if (action.startsWith('wheel-diagnostics-')) {
+    const owner = paneNodeMap.get(paneId);
+    const target = getPaneNode(paneId);
+    const recovery = target?.recovery ?? target;
+    if (!owner || !recovery) return;
+    if (action === 'wheel-diagnostics-toggle') {
+      recovery.setDiagnostics(!recovery.diagnosticsEnabled());
+    } else if (action === 'wheel-diagnostics-copy') {
+      void bridge.writeClipboardText(JSON.stringify(recovery.getDiagnostics(), null, 2)).catch(reportError);
+    }
+    return;
+  }
   if (action === 'terminal-recover-mouse') {
     recoverMouseInput(paneId);
     return;
@@ -2464,7 +2686,7 @@ function handleMenuAction(action, paneId) {
 function blurFocusedTerminal() {
   const node = paneNodeMap.get(focusedPaneId);
   if (node) {
-    node.terminal.blur();
+    node.blur?.();
   }
 }
 
@@ -2638,6 +2860,7 @@ addPaneButtonEl.addEventListener('click', () => {
     reportError(error);
   }
 });
+addPreviewButtonEl.addEventListener('click', () => addPane('preview'));
 
 settingsButtonEl.addEventListener('click', (event) => {
   event.stopPropagation();
@@ -2885,6 +3108,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 window.addEventListener('beforeunload', () => {
+  for (const node of paneNodeMap.values()) node.workspace?.dispose();
   flushSettingsSave();
   removeTerminalDataListener();
   removeTerminalExitListener();

@@ -96,6 +96,8 @@ struct TerminalExitPayload {
 /// Holds the live resources for a single PTY session.
 struct PtySession {
     session_id: String,
+    process_id: Option<u32>,
+    process_exited: Arc<AtomicBool>,
     flow: Arc<OutputFlow>,
     /// The master end of the PTY pair. Kept alive so the child process
     /// has a valid controlling terminal. Dropping this causes the child
@@ -194,6 +196,9 @@ impl PtyManager {
         // Ensure colour support environment variables are set.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // Captured and removed by the original local PowerShell prompt wrapper,
+        // so nested shells and foreground TUIs cannot inherit its prompt marker.
+        cmd.env("VIBE99_PROMPT_TOKEN", session_id);
 
         let mut child = pair
             .slave
@@ -214,12 +219,16 @@ impl PtyManager {
 
         // Clone a killer handle before moving the child into the exit task.
         let killer = child.clone_killer();
+        let process_id = child.process_id();
+        let process_exited = Arc::new(AtomicBool::new(false));
 
         let pane_id_owned = pane_id.to_string();
         let session_id_owned = session_id.to_string();
         let flow = Arc::new(OutputFlow::default());
         let mut session = PtySession {
             session_id: session_id_owned.clone(),
+            process_id,
+            process_exited: process_exited.clone(),
             flow: flow.clone(),
             master: Arc::new(Mutex::new(Some(master))),
             writer: Arc::new(Mutex::new(writer)),
@@ -291,6 +300,7 @@ impl PtyManager {
         let manager = Arc::clone(self);
         std::thread::spawn(move || {
             let exit_code = child.wait().map(|s| s.exit_code()).unwrap_or(1);
+            process_exited.store(true, Ordering::Release);
             // Closing ConPTY makes its output reader reach EOF. Keep the flow
             // entry available for ACKs while the final output drains, and never
             // hold the map mutex during ClosePseudoConsole (it can block).
@@ -326,6 +336,13 @@ impl PtyManager {
             flow.cancel();
         });
         Ok(())
+    }
+
+    /// Return only the live process owned by this exact pane generation.
+    pub fn preview_process_id(&self, pane_id: &str, session_id: &str) -> Option<u32> {
+        self.sessions.lock().ok()?.get(pane_id)
+            .filter(|session| session.session_id == session_id && !session.process_exited.load(Ordering::Acquire))
+            .and_then(|session| session.process_id)
     }
 
     pub fn acknowledge(&self, pane_id: &str, session_id: &str, sequence: u64) {

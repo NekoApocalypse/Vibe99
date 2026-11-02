@@ -108,6 +108,7 @@ body {
 .tab-main,
 .tab-close,
 .tabs-add,
+.tabs-preview,
 .tabs-settings,
 .tabs-fullscreen {
   appearance: none;
@@ -214,6 +215,7 @@ body {
 }
 
 .tabs-add,
+.tabs-preview,
 .tabs-settings,
 .tabs-fullscreen {
   width: 34px;
@@ -236,6 +238,18 @@ body {
 
 .tabs-fullscreen.is-hidden { display: none; }
 .tabs-fullscreen.is-fullscreen { color: #ffd166; }
+.tabs-preview { font-size: 12px; font-weight: 600; }
+.tabs-preview:hover { background: rgba(255, 255, 255, 0.12); }
+.preview-pane-host { height: 100%; min-height: 0; overflow: hidden; }
+.preview-context-dialog { margin: auto; width: min(520px, 90vw); padding: 24px; border: 1px solid #455353; border-radius: 8px; background: #182124; color: #f4f1e8; }
+.preview-context-dialog::backdrop { background: #0008; }
+.preview-context-dialog h2 { font-size: 18px; margin-bottom: 10px; }
+.preview-context-dialog p { color: #a5b7b5; font: 13px/1.5 system-ui; margin-bottom: 18px; }
+.preview-context-dialog label { display: block; font: 13px/1.5 system-ui; margin-top: 12px; }
+.preview-context-dialog input { display: block; width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #455353; background: #11191b; color: inherit; }
+.preview-context-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.preview-context-actions button { padding: 7px 12px; border: 1px solid #455353; background: #263637; color: inherit; cursor: pointer; }
+.pane-preview { padding: 0; }
 
 .settings-panel {
   position: absolute;

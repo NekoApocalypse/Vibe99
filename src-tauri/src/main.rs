@@ -8,6 +8,7 @@ use vibe99_lib::commands::shell_profile;
 use vibe99_lib::commands::terminal::{self, AppState};
 use vibe99_lib::commands::wsl as wsl_cmd;
 use vibe99_lib::pty::PtyManager;
+use vibe99_lib::workspace::{self, WorkspaceManager};
 
 fn main() {
     tauri::Builder::default()
@@ -19,13 +20,18 @@ fn main() {
         .manage(AppState {
             pty: Arc::new(PtyManager::new()),
         })
+        .manage(WorkspaceManager::default())
         .invoke_handler(tauri::generate_handler![
+            workspace::workspace_open,
+            workspace::workspace_request,
+            workspace::workspace_close,
             terminal::terminal_create,
             terminal::terminal_acknowledge,
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_destroy,
             terminal::get_cwd,
+            vibe99_lib::terminal_context::terminal_preview_context,
             settings::settings_load,
             settings::settings_save,
             shell_profile::shell_profiles_list,
@@ -44,8 +50,14 @@ fn main() {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let state = window.state::<AppState>();
                 terminal::destroy_all_terminals(&state);
+                window.state::<WorkspaceManager>().close_all();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<WorkspaceManager>().close_all();
+            }
+        });
 }

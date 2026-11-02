@@ -5,11 +5,11 @@ const assert = require('node:assert/strict');
 
 (async () => {
   const { createServer } = await import('vite');
-  const server = await createServer({ server: { host: '127.0.0.1', port: 1421, strictPort: true } });
+  const server = await createServer({ cacheDir: '../node_modules/.vite-terminal-ui-test', optimizeDeps: { entries: [require('node:path').resolve('src/renderer.js')] }, server: { host: '127.0.0.1', port: 1421, strictPort: true } });
   await server.listen();
   let browser;
   try {
-    browser = await chromium.launch({ headless: true,
+    browser = await chromium.launch({ headless: true, args: ['--no-proxy-server'],
       channel: process.env.VIBE99_TEST_BROWSER || (process.platform === 'win32' ? 'msedge' : undefined) });
     const page = await browser.newPage({ viewport: { width: 1600, height: 920 } });
     const errors = [];

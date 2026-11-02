@@ -219,11 +219,12 @@
       <img class="demo-shot" src="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif" alt="Vibe99 workspace">
 
       <ul>
-        <li><strong>Focus-first stacked layout.</strong> Keep your active terminal wide and readable (1210 px default) while background panes stay partially visible in the stack. You never lose sight of running agents.</li>
-        <li><strong>Instant keyboard switching.</strong> Cycle recent panes with <code>Ctrl+Tab</code>, step left or right with <code>Ctrl+Left</code> and <code>Ctrl+Right</code>, fuzzy-search tabs via the command palette (<code>Ctrl+Shift+O</code>), or enter Vim-style navigation mode (<code>Ctrl+B</code>, then <code>H</code>/<code>L</code> or <code>1</code>–<code>9</code>).</li>
-        <li><strong>Distinct pane colors and breathing alerts.</strong> Every pane gets an Okabe-Ito high-contrast color so you can tell agents apart at a glance. When a background agent finishes output and settles, its mask can pulse softly until you check it.</li>
-        <li><strong>Built for daily shell hazards.</strong> Recover mouse input after a dropped SSH session with <code>Ctrl+Shift+M</code> without losing scrollback. Render CJK characters at full two-cell width so Claude Code and TUI redraws never drift. Discover Windows WSL distributions in the background without slowing down startup.</li>
-        <li><strong>Native Tauri 2 + Rust speed.</strong> Built on Tauri 2, <code>portable-pty</code>, and WebGL-rendered <code>xterm.js</code>. Installs from a ~5 MiB native package and restores your pane layout, working directories, shell profiles, and tab titles on restart.</li>
+        <li><strong>Stacked layout at a glance.</strong> Your active terminal stays wide and readable in the foreground while background panes stack along the edges. You can always see which agents are still streaming output and which ones are waiting for your next prompt.</li>
+        <li><strong>High-contrast palette to lock onto any agent visually.</strong> Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.</li>
+        <li><strong>Fully customizable UI.</strong> Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.</li>
+        <li><strong>Full keyboard control, zero mouse required.</strong> Cycle recent panes with <code>Ctrl+Tab</code>, step left or right with <code>Ctrl+Left</code> and <code>Ctrl+Right</code>, fuzzy-search tabs via the command palette (<code>Ctrl+Shift+O</code>), or enter Vim-style navigation mode (<code>Ctrl+B</code>) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.</li>
+        <li><strong>Native Tauri 2 + Rust performance.</strong> Powered by Tauri 2 and WebGL-accelerated rendering in a <strong>~5 MiB</strong> native installer. Launches fast, stays light on memory, and automatically restores your pane layout, working directories, and tab titles on restart.</li>
+        <li><strong>Power features for multi-agent workflows.</strong> Optional <strong>breathing alerts</strong> softly pulse a background pane when its output finishes settling; <strong>customizable Shell Profiles</strong> let you configure and switch shells per pane; and <strong>Windows WSL integration</strong> discovers your installed Linux distributions in one click.</li>
       </ul>
 
       <h2>Getting started</h2>
@@ -268,11 +269,12 @@ npm run tauri:dev</code></pre>
     <section id="cn">
       <h2>Vibe99 — 多 Agent 终端工作台</h2>
       <ul>
-        <li><strong>一主聚焦、余光巡视的层叠布局</strong>：当前交互的终端保持大宽度清晰显示（默认 1210 px），后台终端层叠排布在视野边缘，随时看清每个 Agent 是在跑任务还是在等指令。</li>
-        <li><strong>全键盘瞬时切换</strong>：支持 <code>Ctrl+Tab</code> 按最近访问顺序切换、<code>Ctrl+Left</code> / <code>Ctrl+Right</code> 按空间位置平移、<code>Ctrl+Shift+O</code> 呼出命令面板模糊搜索标签页，或按 <code>Ctrl+B</code> 进入导航模式（<code>H</code>/<code>L</code> 移动、数字键 <code>1</code>–<code>9</code> 直达）。</li>
-        <li><strong>高对比主题色与呼吸灯提醒</strong>：内置 Okabe-Ito 高辨识度调色盘，靠颜色一眼区分不同窗口的 Agent；后台终端输出完毕静止后，可开启呼吸灯柔光提醒，切回即停。</li>
-        <li><strong>专为真实终端痛点打磨</strong>：SSH 断连后鼠标滚轮乱码可按 <code>Ctrl+Shift+M</code> 一键恢复且保留滚屏历史；精准对齐中日韩（CJK）双宽字符，跑 Claude Code 等 CLI 绝不发生输入漂移；后台异步探测 Windows WSL 发行版，绝不拖慢冷启动。</li>
-        <li><strong>Tauri 2 + Rust 原生轻量体验</strong>：告别臃肿的 Electron，基于 Tauri 2、<code>portable-pty</code> 与 WebGL 加速的 <code>xterm.js</code> 重构，原生安装包仅 ~5 MiB，重启自动恢复窗口布局、工作目录、Shell 配置与标签页标题。</li>
+        <li><strong>层叠布局，一览无余</strong>：主窗口大宽度居中清晰呈现，其余终端层叠排布在视野两侧，不用来回切窗口也能一眼看清每个 Agent 是在跑任务还是在等指令。</li>
+        <li><strong>高辨识度调色盘，用视觉锁定 Agent</strong>：内置 Okabe-Ito 高对比度调色盘，每个面板的标签页与背景蒙版都带有专属主题色，多开窗口时靠直觉和颜色就能瞬间锁定目标 Agent。</li>
+        <li><strong>UI 全面可调</strong>：主面板宽度、终端透明度、后台蒙版浓度，以及本机任意等宽字体均可自由调节，按你的屏幕尺寸与阅读习惯定制最舒服的视野。</li>
+        <li><strong>丰富的快捷键支持，纯键盘也能行云流水</strong>：支持 <code>Ctrl+Tab</code> 按最近访问切换、<code>Ctrl+Left</code> / <code>Ctrl+Right</code> 左右平移、<code>Ctrl+Shift+O</code> 呼出命令面板模糊搜索，或按 <code>Ctrl+B</code> 进入导航模式（<code>H</code>/<code>L</code> 移动、数字键 <code>1</code>–<code>9</code> 直达、新建/重命名/关闭面板），所有快捷键均支持自定义。</li>
+        <li><strong>Tauri 2 + Rust 原生轻量体验</strong>：基于 Tauri 2 与 WebGL 硬件加速渲染打造，原生安装包仅 <strong>~5 MiB</strong>，启动快、内存占用低、滚屏丝滑，重启后自动恢复面板布局、工作目录与标签页标题。</li>
+        <li><strong>更多贴合多 Agent 的进阶功能</strong>：支持<strong>呼吸灯提醒</strong>（后台 Agent 输出结束静止后柔光闪烁提示）、<strong>Shell Profiles 管理</strong>（按面板自由切换或定制不同终端环境）以及 <strong>Windows WSL 支持</strong>（一键探测并接入本机已安装的 Linux 发行版）。</li>
       </ul>
 
       <h2>快速开始</h2>

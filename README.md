@@ -13,11 +13,12 @@ One developer now runs four or five coding agents at once. Traditional terminals
 
 ![Vibe99 workspace](artifacts/readme-demo.gif)
 
-- **Focus-first stacked layout.** Keep your active terminal wide and readable (1210 px default) while background panes stay partially visible in the stack. You never lose sight of running agents.
-- **Instant keyboard switching.** Cycle recent panes with `Ctrl+Tab`, step left or right with `Ctrl+Left` and `Ctrl+Right`, fuzzy-search tabs via the command palette (`Ctrl+Shift+O`), or enter Vim-style navigation mode (`Ctrl+B`, then `H`/`L` or `1`–`9`).
-- **Distinct pane colors and breathing alerts.** Every pane gets an Okabe-Ito high-contrast color so you can tell agents apart at a glance. When a background agent finishes output and settles, its mask can pulse softly until you check it.
-- **Built for daily shell hazards.** Recover mouse input after a dropped SSH session with `Ctrl+Shift+M` without losing scrollback. Render CJK characters at full two-cell width so Claude Code and TUI redraws never drift. Discover Windows WSL distributions in the background without slowing down startup.
-- **Native Tauri 2 + Rust speed.** Built on Tauri 2, `portable-pty`, and WebGL-rendered `xterm.js`. Installs from a ~5 MiB native package and restores your pane layout, working directories, shell profiles, and tab titles on restart.
+- **Stacked layout at a glance.** Your active terminal stays wide and readable in the foreground while background panes stack along the edges. You can always see which agents are still streaming output and which ones are waiting for your next prompt.
+- **High-contrast palette to lock onto any agent visually.** Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.
+- **Fully customizable UI.** Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.
+- **Full keyboard control, zero mouse required.** Cycle recent panes with `Ctrl+Tab`, step left or right with `Ctrl+Left` and `Ctrl+Right`, fuzzy-search tabs via the command palette (`Ctrl+Shift+O`), or enter Vim-style navigation mode (`Ctrl+B`) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.
+- **Native Tauri 2 + Rust performance.** Powered by Tauri 2 and WebGL-accelerated rendering in a **~5 MiB** native installer. Launches fast, stays light on memory, and automatically restores your pane layout, working directories, and tab titles on restart.
+- **Power features for multi-agent workflows.** Optional **breathing alerts** softly pulse a background pane when its output finishes settling; **customizable Shell Profiles** let you configure and switch shells per pane; and **Windows WSL integration** discovers your installed Linux distributions in one click.
 
 ## Getting started
 

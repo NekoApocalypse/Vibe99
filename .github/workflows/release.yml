@@ -90,6 +90,15 @@ jobs:
           VIBE99_TEST_BROWSER: chromium
         run: npm run test:link-cache
 
+      - name: Verify Mermaid interactions and tab closing
+        env:
+          VIBE99_TEST_BROWSER: chromium
+        run: |
+          npm run test:diagrams
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:review
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run Rust tests
         run: cargo test --locked --release --manifest-path src-tauri/Cargo.toml --lib
 

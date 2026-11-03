@@ -1273,6 +1273,16 @@ function createTab(pane, index, focusedIndex, dragMeta) {
   tab.style.setProperty('--pane-accent', accentColor);
   tab.style.setProperty('--tab-text-color', getTextColorForBackground(accentColor));
   tab.dataset.paneId = pane.id;
+  // Prevent native autoscroll, but close on release like browser tabs.
+  tab.addEventListener('mousedown', (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
+  tab.addEventListener('auxclick', (event) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closePane(getPaneIndex(pane.id));
+  });
   tab.addEventListener('contextmenu', (event) => {
     event.preventDefault();
     void showTabContextMenu(pane.id, event);
@@ -2833,7 +2843,10 @@ const dispatchKeydown = createDispatcher({
   isCommandPaletteOpen,
 });
 
-window.addEventListener('keydown', dispatchKeydown, true);
+window.addEventListener('keydown', (event) => {
+  if (document.querySelector('dialog.diagram-viewer[open]')) return;
+  dispatchKeydown(event);
+}, true);
 
 // Commit the pane cycle when the cycling modifier is released. Without this,
 // a user who presses Ctrl+` and then switches to a different pane via mouse

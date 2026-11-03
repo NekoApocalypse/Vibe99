@@ -8,6 +8,8 @@ Each resolved terminal file request creates a new document pane. While file cont
 
 The existing visual model is unchanged: the focused pane has its own opaque reading area; background panes overlap in tab order at the configured opacity. Background content showing through those stacked panes is intentional.
 
+Middle-click any terminal or document tab to close it using the same cleanup and last-pane protection as its Close button. Closing a background tab preserves the focused pane.
+
 ## Finding the file
 
 Windows PowerShell reports its working folder at each local prompt. For a simple `ssh user@host` or `ssh alias` running inside the source pane, Vibe99 can inspect that pane's owned process tree and open an independent file-reading SSH connection automatically. It uses existing noninteractive authentication and known_hosts, and needs Python 3 on the Linux host.
@@ -19,5 +21,7 @@ This is a file reader, not a filesystem sandbox: Folder resolves relative paths,
 ## Rendering and recovery
 
 The reader supports code highlighting, KaTeX equations, Mermaid diagrams, and local/remote raster images. Text must be UTF-8 up to 4 MiB; images are limited to 16 MiB. Raw HTML and network images are disabled. It checks modification stamps every two seconds while visible, preserving unchanged document DOM and scroll position. Errors appear inline with Retry.
+
+Each rendered Mermaid diagram has an Expand button. The expanded view sits above all panes: drag to pan, scroll to zoom at the pointer, use Fit or double-click to fit, and use the percentage button for actual size. Keyboard controls are `+`/`-`, arrow keys, `0` (fit), `1` (actual size), and Escape (close). Tab stays inside the viewer; app shortcuts do not reach the panes. The expanded view is a snapshot so file updates do not interrupt inspection; close and reopen it for the latest diagram. Changing documents or closing the owner dismisses it. It uses the already sanitized SVG and opens no additional connection.
 
 Mouse recovery and bounded wheel diagnostics remain on the original terminal: Ctrl+Shift+M or its tab context menu. Recovery temporarily suppresses wheel-to-arrow fallback only in the affected alternate screen; it does not force a live tmux session out of that screen. The complete reported sleep/tmux/agy dual-scroll incident remains unreproduced.

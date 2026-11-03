@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.8.1 - 2026-11-03
+
+### Added
+
+- Middle-click terminal and Markdown tabs to close them using the normal cleanup rules. Mermaid diagrams can expand above all panes with wheel zoom, drag panning, Fit, actual size, and keyboard controls.
+
+
 ## 0.8.0 - 2026-11-03
 
 ### Added

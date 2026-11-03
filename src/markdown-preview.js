@@ -34,6 +34,7 @@ import markdown from 'highlight.js/lib/languages/markdown';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/tomorrow-night-blue.css';
 import { previewDirname, resolvePreviewPath } from './preview-paths.js';
+import { openDiagramViewer } from './diagram-viewer.js';
 
 export const MAX_PREVIEW_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
@@ -125,8 +126,17 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
   container.tabIndex = 0;
   container.setAttribute('aria-label', 'Markdown preview');
   let generation = 0, imageGeneration = 0, disposed = false, previous = null;
+  let closeDiagram = null;
+  const dismissDiagram = () => { closeDiagram?.(); closeDiagram = null; };
   const fail = (error) => onError(error instanceof Error ? error : new Error(String(error)));
   const click = async (event) => {
+    const expand = event.target.closest?.('.diagram-expand');
+    if (expand && container.contains(expand)) {
+      const svg = expand.parentElement.querySelector('svg');
+      if (svg) closeDiagram = openDiagramViewer({ svg, trigger: expand, focusFallback: container,
+        title: `Mermaid diagram ${Number(expand.parentElement.dataset.diagram) + 1}` });
+      return;
+    }
     const link = event.target.closest?.('a');
     if (!link || !container.contains(link)) return;
     event.preventDefault();
@@ -181,6 +191,15 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
           const { svg } = await mermaid.render(`vibe99-diagram-${++diagramCounter}`, sources[Number(item.dataset.diagram)]);
           if (disposed || current !== generation) return;
           item.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true }, FORBID_TAGS: ['foreignObject', 'script'], FORBID_ATTR: ['href', 'xlink:href'] });
+          if (item.querySelector('svg')) {
+            const expand = document.createElement('button');
+            expand.type = 'button';
+            expand.className = 'diagram-expand';
+            expand.textContent = 'Expand';
+            expand.title = 'Expand diagram · zoom and pan';
+            expand.setAttribute('aria-label', `Expand Mermaid diagram ${Number(item.dataset.diagram) + 1}`);
+            item.append(expand);
+          }
         } catch (error) {
           if (disposed || current !== generation) return;
           item.textContent = `Diagram error: ${String(error).replace(/^Error: /, '')}`;
@@ -198,6 +217,9 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
       if (typeof text !== 'string' || new TextEncoder().encode(text).length > MAX_PREVIEW_BYTES) throw new Error('Preview text exceeds the 4 MiB limit.');
       const sameText = previous?.text === text;
       const sameLocation = previous?.path === path && previous?.root === root;
+      // Keep the expanded snapshot stable while an agent updates this file.
+      // Navigation and disposal still dismiss it; reopening uses the newest SVG.
+      if (!sameLocation) dismissDiagram();
       previous = { text, path, root };
       if (sameText) {
         if (!sameLocation || refreshImages) void images(path, root, generation);
@@ -209,8 +231,8 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
       void diagrams(env.diagrams, current);
       return true;
     },
-    clear(message = '') { generation++; imageGeneration++; previous = null; container.textContent = message; },
+    clear(message = '') { dismissDiagram(); generation++; imageGeneration++; previous = null; container.textContent = message; },
     focus() { container.focus(); },
-    dispose() { disposed = true; generation++; imageGeneration++; container.removeEventListener('click', click); container.replaceChildren(); },
+    dispose() { dismissDiagram(); disposed = true; generation++; imageGeneration++; container.removeEventListener('click', click); container.replaceChildren(); },
   };
 }

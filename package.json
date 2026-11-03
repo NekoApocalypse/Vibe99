@@ -1,7 +1,7 @@
 {
   "name": "vibe99",
   "productName": "Vibe99",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Vibe99 terminal application",
@@ -14,6 +14,7 @@
     "test:preview": "node scripts/test-document-ui.cjs",
     "test:recovery": "node scripts/test-terminal-recovery.cjs",
     "test:review": "node scripts/test-review-ui.cjs",
+    "test:diagrams": "node scripts/test-diagram-viewer.cjs",
     "release:notes": "node ./scripts/extract-release-notes.mjs",
     "bump-version": "node ./scripts/bump-version.mjs",
     "vite:dev": "vite",

@@ -1,6 +1,6 @@
 # Third-party notices
 
-Vibe99's Markdown preview and temporary remote workspace helper adapt code from Owlet by NekoApocalypse. Owlet is licensed under the MIT license below. Vibe99 remains GPL-3.0-or-later; dependencies retain their respective licenses.
+Vibe99's Markdown preview, expanded diagram viewer, and temporary remote workspace helper adapt code from Owlet by NekoApocalypse. Owlet is licensed under the MIT license below. Vibe99 remains GPL-3.0-or-later; dependencies retain their respective licenses.
 
 Source: https://github.com/NekoApocalypse/owlet
 

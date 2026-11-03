@@ -1,11 +1,11 @@
 {
   "productName": "Vibe99 Review",
-  "identifier": "com.vibe99.review7",
+  "identifier": "com.vibe99.review8",
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "Vibe99 Review 7 — Ordinary document panes",
+        "title": "Vibe99 Review 8 — Mermaid viewer and middle-click tabs",
         "width": 1600,
         "height": 920,
         "minWidth": 960,

@@ -2,6 +2,19 @@
 
 <!-- towncrier release notes start -->
 
+## 0.9.0 - 2026-11-05
+
+### Added
+
+- Add a stable Windows release shortcut and local staging command, so a taskbar pin keeps launching the latest locally staged production build without replacing the pin.
+- Expand Markdown images above all panes with the same zoom, pan, Fit, actual-size and keyboard controls as Mermaid diagrams. Expanded images remain stable while the document refreshes.
+- Paste clipboard images into terminal tools as PNG attachments: local files are staged automatically, and simple SSH sessions upload images to the remote host before pasting its path, including inside tmux. Ctrl+V, Ctrl+Shift+V and the context menu share this behavior without submitting the prompt. Inactive panes consume the first click to focus, so links and Markdown paths open only from an active pane.
+
+### Fixed
+
+- Open terminal HTTP(S) URLs with a normal left-click, consistently with Markdown links. Consume link gestures before a remote TUI or tmux receives mouse reports; keep Ctrl-click working and Shift-click available for selection. Inactive panes still consume the first click to focus.
+
+
 ## 0.8.1 - 2026-11-03
 
 ### Added

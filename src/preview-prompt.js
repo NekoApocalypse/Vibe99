@@ -1,5 +1,5 @@
 // Only used when a file reference lacks enough pane context, or for manual entry.
-export function askPreviewDetails({ title, message = '', fields }) {
+export function askPreviewDetails({ title, message = '', fields, confirmLabel = 'Open preview' }) {
   return new Promise(resolve => {
     const dialog = document.createElement('dialog');
     dialog.className = 'preview-context-dialog';
@@ -16,7 +16,7 @@ export function askPreviewDetails({ title, message = '', fields }) {
     }
     const buttons = document.createElement('div'); buttons.className = 'preview-context-actions';
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
-    const open = document.createElement('button'); open.type = 'submit'; open.textContent = 'Open preview';
+    const open = document.createElement('button'); open.type = 'submit'; open.textContent = confirmLabel;
     buttons.append(cancel, open); form.append(buttons); dialog.append(form); document.body.append(dialog);
     let settled = false;
     const finish = value => { if (settled) return; settled = true; dialog.close(); dialog.remove(); resolve(value); };

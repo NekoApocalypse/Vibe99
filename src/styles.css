@@ -1506,3 +1506,5 @@ body.is-dragging-tabs {
   cursor: wait;
 }
 .wsl-discovery span { min-width: 0; overflow-wrap: anywhere; }
+/* Brief progress for an explicit paste; never covers the terminal's input. */
+.clipboard-paste-notice { position: absolute; right: 16px; top: 12px; z-index: 5; padding: 6px 10px; border-radius: 5px; background: #263637; color: #f4f1e8; font: 12px 'Segoe UI', sans-serif; pointer-events: none; }

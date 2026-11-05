@@ -34,7 +34,7 @@ import markdown from 'highlight.js/lib/languages/markdown';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/tomorrow-night-blue.css';
 import { previewDirname, resolvePreviewPath } from './preview-paths.js';
-import { openDiagramViewer } from './diagram-viewer.js';
+import { openDiagramViewer, openImageViewer } from './diagram-viewer.js';
 
 export const MAX_PREVIEW_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
@@ -126,14 +126,21 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
   container.tabIndex = 0;
   container.setAttribute('aria-label', 'Markdown preview');
   let generation = 0, imageGeneration = 0, disposed = false, previous = null;
-  let closeDiagram = null;
-  const dismissDiagram = () => { closeDiagram?.(); closeDiagram = null; };
+  let closeViewer = null;
+  const dismissViewer = () => { closeViewer?.(); closeViewer = null; };
   const fail = (error) => onError(error instanceof Error ? error : new Error(String(error)));
   const click = async (event) => {
+    const image = event.target.closest?.('.preview-image img[src]');
+    if (image && container.contains(image)) {
+      event.preventDefault(); event.stopPropagation();
+      const close = openImageViewer({ image, focusFallback: container });
+      if (close) closeViewer = close;
+      return;
+    }
     const expand = event.target.closest?.('.diagram-expand');
     if (expand && container.contains(expand)) {
       const svg = expand.parentElement.querySelector('svg');
-      if (svg) closeDiagram = openDiagramViewer({ svg, trigger: expand, focusFallback: container,
+      if (svg) closeViewer = openDiagramViewer({ svg, trigger: expand, focusFallback: container,
         title: `Mermaid diagram ${Number(expand.parentElement.dataset.diagram) + 1}` });
       return;
     }
@@ -153,6 +160,12 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
     } catch (error) { if (!disposed) fail(error); }
   };
   container.addEventListener('click', click);
+  const imageKey = event => {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches?.('.preview-image img[src]')) {
+      event.preventDefault(); event.stopPropagation(); event.target.click();
+    }
+  };
+  container.addEventListener('keydown', imageKey);
   async function images(path, root, current) {
     const revision = ++imageGeneration;
     const items = [...container.querySelectorAll('.preview-image')];
@@ -168,12 +181,17 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
           const prefix = /^data:image\/(?:png|jpeg|jpg|webp|gif|avif|bmp);base64,/i.exec(result.url || '');
           if (!prefix || result.url.length - prefix[0].length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('Unsupported image or image exceeds 16 MiB.');
           if (img.getAttribute('src') !== result.url) img.src = result.url;
+          img.tabIndex = 0;
+          img.setAttribute('role', 'button');
+          img.setAttribute('aria-label', `Expand image: ${img.alt}`);
+          img.title = 'Expand image · zoom and pan';
           item.title = result.path || source;
           item.classList.remove('preview-render-error');
           item.querySelector('.preview-image-caption').textContent = img.alt;
         } catch (error) {
           if (disposed || current !== generation || revision !== imageGeneration) return;
           img.removeAttribute('src');
+          img.removeAttribute('tabindex'); img.removeAttribute('role'); img.removeAttribute('aria-label'); img.removeAttribute('title');
           item.classList.add('preview-render-error');
           item.querySelector('.preview-image-caption').textContent = `${source}: ${String(error).replace(/^Error: /, '')}`;
         }
@@ -218,8 +236,8 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
       const sameText = previous?.text === text;
       const sameLocation = previous?.path === path && previous?.root === root;
       // Keep the expanded snapshot stable while an agent updates this file.
-      // Navigation and disposal still dismiss it; reopening uses the newest SVG.
-      if (!sameLocation) dismissDiagram();
+      // Navigation and disposal still dismiss it; reopening uses the newest media.
+      if (!sameLocation) dismissViewer();
       previous = { text, path, root };
       if (sameText) {
         if (!sameLocation || refreshImages) void images(path, root, generation);
@@ -231,8 +249,8 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
       void diagrams(env.diagrams, current);
       return true;
     },
-    clear(message = '') { dismissDiagram(); generation++; imageGeneration++; previous = null; container.textContent = message; },
+    clear(message = '') { dismissViewer(); generation++; imageGeneration++; previous = null; container.textContent = message; },
     focus() { container.focus(); },
-    dispose() { dismissDiagram(); disposed = true; generation++; imageGeneration++; container.removeEventListener('click', click); container.replaceChildren(); },
+    dispose() { dismissViewer(); disposed = true; generation++; imageGeneration++; container.removeEventListener('click', click); container.removeEventListener('keydown', imageKey); container.replaceChildren(); },
   };
 }

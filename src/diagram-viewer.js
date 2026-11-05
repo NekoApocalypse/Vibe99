@@ -1,38 +1,54 @@
 // Owlet interaction model, adapted to Vibe99's DOM renderer and native dialog.
-// The sanitized SVG is moved, not cloned: Mermaid's SVG IDs stay unique.
+// Move Mermaid SVGs to keep IDs unique; clone image snapshots for live refresh.
 import './diagram-viewer.css';
 
 let activeViewer = null;
 
 export function openDiagramViewer({ svg, trigger, focusFallback, title = 'Mermaid diagram' }) {
+  return openMediaViewer({ media: svg, trigger, focusFallback, title });
+}
+
+export function openImageViewer({ image, trigger = image, focusFallback }) {
+  if (!image.complete || !image.naturalWidth || !image.naturalHeight) return null;
+  // Keep the inline image in place: image-only refreshes must still find it.
+  const snapshot = image.cloneNode(true);
+  snapshot.removeAttribute('role'); snapshot.removeAttribute('tabindex');
+  snapshot.removeAttribute('aria-label'); snapshot.removeAttribute('title');
+  snapshot.loading = 'eager';
+  return openMediaViewer({ media: snapshot, trigger, focusFallback, title: image.alt || 'Image',
+    imageSize: { width: image.naturalWidth, height: image.naturalHeight } });
+}
+
+function openMediaViewer({ media, trigger, focusFallback, title, imageSize }) {
   activeViewer?.();
-  const origin = svg.parentNode;
+  const kind = imageSize ? 'image' : 'diagram';
+  const origin = media.parentNode;
   const anchor = document.createComment('expanded diagram');
-  const bounds = svg.getBoundingClientRect();
-  const viewBox = svg.viewBox?.baseVal;
-  const width = viewBox?.width || bounds.width || 800;
-  const height = viewBox?.height || bounds.height || 600;
-  const style = svg.getAttribute('style');
-  origin.insertBefore(anchor, svg);
+  const bounds = media.getBoundingClientRect();
+  const viewBox = media.viewBox?.baseVal;
+  const width = imageSize?.width || viewBox?.width || bounds.width || 800;
+  const height = imageSize?.height || viewBox?.height || bounds.height || 600;
+  const style = media.getAttribute('style');
+  origin?.insertBefore(anchor, media);
   const dialog = document.createElement('dialog');
   dialog.className = 'diagram-viewer';
-  dialog.setAttribute('aria-label', 'Expanded Mermaid diagram');
+  dialog.setAttribute('aria-label', imageSize ? 'Expanded image' : 'Expanded Mermaid diagram');
   dialog.innerHTML = `<div class="diagram-viewer-toolbar">
     <strong></strong><span class="diagram-help">Snapshot · Drag to pan · Scroll to zoom</span>
-    <button type="button" data-action="out" aria-label="Zoom diagram out" title="Zoom out (-)">−</button>
-    <button type="button" data-action="actual" aria-label="Diagram actual size" title="Actual size (1)">100%</button>
-    <button type="button" data-action="in" aria-label="Zoom diagram in" title="Zoom in (+)">+</button>
-    <button type="button" data-action="fit" aria-label="Fit diagram" title="Fit diagram (0)">Fit</button>
-    <button type="button" data-action="close" aria-label="Close diagram" title="Close (Esc)">Close</button>
-    </div><div class="diagram-canvas" tabindex="0" aria-label="Diagram canvas; drag to pan, scroll to zoom"><div class="diagram-transform"></div></div>`;
+    <button type="button" data-action="out" aria-label="Zoom ${kind} out" title="Zoom out (-)">−</button>
+    <button type="button" data-action="actual" aria-label="${imageSize ? 'Image' : 'Diagram'} actual size" title="Actual size (1)">100%</button>
+    <button type="button" data-action="in" aria-label="Zoom ${kind} in" title="Zoom in (+)">+</button>
+    <button type="button" data-action="fit" aria-label="Fit ${kind}" title="Fit (0)">Fit</button>
+    <button type="button" data-action="close" aria-label="Close ${kind}" title="Close (Esc)">Close</button>
+    </div><div class="diagram-canvas" tabindex="0" aria-label="${kind} canvas; drag to pan, scroll to zoom"><div class="diagram-transform"></div></div>`;
   dialog.querySelector('strong').textContent = title;
   const canvas = dialog.querySelector('.diagram-canvas');
   const transform = dialog.querySelector('.diagram-transform');
   const percentage = dialog.querySelector('[data-action="actual"]');
   transform.style.width = `${width}px`;
   transform.style.height = `${height}px`;
-  svg.style.cssText = 'width:100%;height:100%;max-width:none;display:block';
-  transform.append(svg);
+  media.style.cssText = 'width:100%;height:100%;max-width:none;display:block';
+  transform.append(media);
   document.body.append(dialog);
   let scale = 1, x = 0, y = 0, drag = null, closed = false;
   const paint = () => {
@@ -57,8 +73,8 @@ export function openDiagramViewer({ svg, trigger, focusFallback, title = 'Mermai
     if (closed) return;
     closed = true;
     observer.disconnect();
-    if (style === null) svg.removeAttribute('style'); else svg.setAttribute('style', style);
-    if (anchor.parentNode) anchor.replaceWith(svg);
+    if (style === null) media.removeAttribute('style'); else media.setAttribute('style', style);
+    if (anchor.parentNode) anchor.replaceWith(media);
     dialog.close();
     dialog.remove();
     if (activeViewer === close) activeViewer = null;

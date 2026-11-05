@@ -26,6 +26,8 @@ import { parseFileReference, registerTerminalFileLinks } from './terminal-file-l
 import { previewDirname } from './preview-paths.js';
 import { askPreviewDetails } from './preview-prompt.js';
 import projectDefaults from './default-settings.json';
+import { installPaneActivationGate } from './pane-activation.js';
+import { createClipboardPaste } from './clipboard-paste.js';
 
 function getRuntimePlatform() {
   const platform = navigator.platform.toLowerCase();
@@ -194,14 +196,9 @@ function createTauriBridge(tauri) {
     closeWindow: () => getCurrentWindow().close(),
     readClipboardText: () => clipboardReadText(),
     writeClipboardText: (text) => clipboardWriteText(text),
-    getClipboardSnapshot: async () => {
-      try {
-        const text = await clipboardReadText();
-        return { text: text ?? '', hasImage: false };
-      } catch {
-        return { text: '', hasImage: false };
-      }
-    },
+    getClipboardSnapshot: () => invoke('clipboard_snapshot'),
+    captureClipboard: payload => invoke('clipboard_capture', payload),
+    resolveImagePath: payload => invoke('terminal_image_path', payload),
     openExternalUrl: (url) => openUrl(url),
     terminalPreviewContext: payload => invoke('terminal_preview_context', payload),
     workspaceOpen: async (payload) => {
@@ -1118,14 +1115,8 @@ function createTerminalTheme(accent) {
   };
 }
 
-function isLinkOpenModifierPressed(event) {
-  return event.ctrlKey || (bridge.platform === 'darwin' && event.metaKey);
-}
-
 function handleTerminalLinkActivation(event, uri) {
-  if (!isLinkOpenModifierPressed(event)) {
-    return;
-  }
+  if (event.button !== 0 || event.shiftKey) return;
 
   event.preventDefault();
   event.stopPropagation();
@@ -1372,6 +1363,7 @@ function createTabLabel(pane) {
 function createPane(pane) {
   const paneEl = document.createElement('article');
   paneEl.className = 'pane';
+  paneEl.dataset.inputPaneId = pane.id;
   const accentColor = pane.customColor || pane.accent;
   paneEl.style.setProperty('--pane-accent', accentColor);
   paneEl.addEventListener('click', () => {
@@ -1411,12 +1403,19 @@ function createPane(pane) {
     linkHandler: {
       allowNonHttpProtocols: true,
       activate: (event, uri) => handlePaneLink(pane.id, event, uri),
-      hover: (_event, uri) => node.fileLinks?.setExplicitReference(parseFileReference(uri)),
+      hover: (_event, uri) => {
+        const reference = parseFileReference(uri);
+        if (reference) node.fileLinks?.setExplicitReference(reference);
+        else node.fileLinks?.setExternalLink(normalizeExternalUrl(uri) ? event => handleTerminalLinkActivation(event, uri) : null);
+      },
       leave: () => node.fileLinks?.setExplicitReference(null),
     },
   });
   const fitAddon = new FitAddon();
-  const webLinksAddon = new WebLinksAddon(handleTerminalLinkActivation);
+  const webLinksAddon = new WebLinksAddon(handleTerminalLinkActivation, {
+    hover: (_event, uri) => node.fileLinks?.setExternalLink(event => handleTerminalLinkActivation(event, uri)),
+    leave: () => node.fileLinks?.setExternalLink(null),
+  });
   terminal.loadAddon(fitAddon);
   terminal.loadAddon(webLinksAddon);
   // Unicode 11 width tables align xterm.js's wcwidth with what modern CLI
@@ -1482,7 +1481,7 @@ function createPane(pane) {
     accent: pane.accent,
   };
   node.recovery = createTerminalRecovery({ terminal, getSessionId: () => node.sessionId,
-    onLocalPrompt: () => { node.previewMapping = null; node.detectedPreviewContext = null; node.directoryHint = null; node.previewContextEpoch = (node.previewContextEpoch || 0) + 1; } });
+    onLocalPrompt: () => { node.previewMapping = null; node.imagePasteTarget = undefined; node.detectedPreviewContext = null; node.directoryHint = null; node.previewContextEpoch = (node.previewContextEpoch || 0) + 1; } });
   node.fileLinks = registerTerminalFileLinks(terminal, reference => { void openFileBesidePane(pane.id, reference).catch(reportError); });
   node.directoryListener = terminal.parser.registerOscHandler(7, value => {
     try {
@@ -1520,6 +1519,11 @@ function createPane(pane) {
     focusPane(node.paneId, { focusTerminal: false });
     void showTerminalContextMenu(node, event);
   });
+  // Native paste (including Shift+Insert) must not also reach xterm's text handler.
+  terminalHost.addEventListener('paste', event => {
+    event.preventDefault(); event.stopImmediatePropagation();
+    void pasteIntoTerminal(pane.id);
+  }, true);
 
   terminal.onData((data) => {
     node.recovery.classifyInput(data);
@@ -1578,6 +1582,7 @@ function createPane(pane) {
 function createPreviewPane(pane) {
   const root = document.createElement('article');
   root.className = 'pane pane-preview';
+  root.dataset.inputPaneId = pane.id;
   root.style.setProperty('--pane-accent', pane.customColor || pane.accent);
   const host = document.createElement('div'); host.className = 'preview-pane-host';
   host.textContent = 'Opening document…'; root.append(host);
@@ -2238,24 +2243,11 @@ function copyTerminalSelection(paneId = focusedPaneId) {
   return true;
 }
 
-async function pasteIntoTerminal(paneId = focusedPaneId, options = {}) {
-  const node = getPaneNode(paneId);
-  if (!node?.sessionReady) {
-    return false;
-  }
-
-  const text = options.clipboardSnapshot?.text ?? (await bridge.readClipboardText());
-  if (!text) {
-    return false;
-  }
-
-  if (bridge.platform === 'win32' || paneNodeMap.get(paneId)?.kind === 'preview') {
-    node.terminal.paste(text);
-  } else {
-    bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data: text }).catch(reportError);
-  }
-  return true;
-}
+const pasteClipboard = createClipboardPaste({ bridge, getNode: getPaneNode, getActiveId: () => focusedPaneId,
+  onError: reportError, askTarget: () => askPreviewDetails({ title: 'Paste image into this terminal', confirmLabel: 'Paste image',
+    message: 'Where is this TUI running? Use an SSH alias for its host, or leave empty for native local apps. WSL and containers need an accessible SSH host. This is remembered until the local shell prompt returns.',
+    fields: [{ name: 'target', label: 'SSH host', placeholder: 'user@host or SSH alias' }] }) });
+function pasteIntoTerminal(paneId = focusedPaneId, options = {}) { return pasteClipboard(paneId, options); }
 
 function selectAllInTerminal(paneId = focusedPaneId) {
   const node = getPaneNode(paneId);
@@ -2416,7 +2408,7 @@ async function showTerminalContextMenu(node, event) {
 
   const items = [
     { label: 'Copy', action: 'terminal-copy', disabled: !node.terminal.hasSelection(), shortcut: '⇧⌘C' },
-    { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text, shortcut: '⇧⌘V' },
+    { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text && !clipboardSnapshot.hasImage, shortcut: 'Ctrl+V' },
     { label: 'Paste Image', action: 'terminal-paste-image', disabled: !clipboardSnapshot.hasImage },
     { type: 'separator' },
     { label: 'Change Color...', action: 'terminal-change-color' },
@@ -2593,20 +2585,7 @@ function openTabSwitcher() {
   });
 }
 
-async function pasteImageIntoTerminal(paneId = focusedPaneId, options = {}) {
-  const node = getPaneNode(paneId);
-  if (!node?.sessionReady) {
-    return false;
-  }
-
-  const clipboardSnapshot = options.clipboardSnapshot ?? (await getClipboardSnapshot());
-  if (!clipboardSnapshot.hasImage) {
-    return false;
-  }
-
-  bridge.writeTerminal({ paneId: node.paneId, sessionId: node.sessionId, data: '\u0016' }).catch(reportError);
-  return true;
-}
+function pasteImageIntoTerminal(paneId = focusedPaneId) { return pasteClipboard(paneId, { imageOnly: true }); }
 
 function handleMenuAction(action, paneId) {
   if (action.startsWith('wheel-diagnostics-')) {
@@ -2844,9 +2823,17 @@ const dispatchKeydown = createDispatcher({
 });
 
 window.addEventListener('keydown', (event) => {
-  if (document.querySelector('dialog.diagram-viewer[open]')) return;
+  if (document.querySelector('dialog[open]')) return;
+  const terminal = getPaneNode(focusedPaneId);
+  if (terminal?.root.contains(event.target) && isWindowsCtrlVPasteHotkey(event)) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (!event.repeat) void pasteIntoTerminal(focusedPaneId);
+    return;
+  }
   dispatchKeydown(event);
 }, true);
+
+installPaneActivationGate({ activeId: () => focusedPaneId, activate: id => focusPane(id) });
 
 // Commit the pane cycle when the cycling modifier is released. Without this,
 // a user who presses Ctrl+` and then switches to a different pane via mouse

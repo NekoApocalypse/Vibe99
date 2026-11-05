@@ -2,11 +2,13 @@
 
 Click a Markdown file reference in an agent's terminal output to open an ordinary document pane immediately to its right. The reader contains the document name and Close; it creates any required read-only connection internally and does not start another shell.
 
-Local and remote `.md`, `.markdown`, and `.mdown` references are supported, including terminal hyperlinks, absolute paths, relative paths, quoted paths with spaces, and line suffixes. Web links keep their existing Ctrl-click behavior. The MD button and command palette also accept a file path when there is no clickable reference.
+Local and remote `.md`, `.markdown`, and `.mdown` references are supported, including terminal hyperlinks, absolute paths, relative paths, quoted paths with spaces, and line suffixes. Web links open with a left-click in an active terminal pane; Ctrl-click also works. The MD button and command palette also accept a file path when there is no clickable reference.
 
 Each resolved terminal file request creates a new document pane. While file context is being resolved, rapid clicks retain only the latest pending request; links within a document navigate that reader. After insertion, a document uses the same width, tab ordering, dragging, stacking, and focus rules as terminal panes. It is not paired with its source: either can be moved or closed independently. The last remaining pane cannot be closed with its tab or document Close button; the window can still be closed normally. Preview connections and documents are not restored automatically at startup.
 
 The existing visual model is unchanged: the focused pane has its own opaque reading area; background panes overlap in tab order at the configured opacity. Background content showing through those stacked panes is intentional.
+
+The first click anywhere in an inactive pane only focuses it. Links, Markdown paths, and document controls respond on the next click while that pane is active. The activation gesture is also withheld from terminal mouse reporting.
 
 Middle-click any terminal or document tab to close it using the same cleanup and last-pane protection as its Close button. Closing a background tab preserves the focused pane.
 
@@ -23,5 +25,7 @@ This is a file reader, not a filesystem sandbox: Folder resolves relative paths,
 The reader supports code highlighting, KaTeX equations, Mermaid diagrams, and local/remote raster images. Text must be UTF-8 up to 4 MiB; images are limited to 16 MiB. Raw HTML and network images are disabled. It checks modification stamps every two seconds while visible, preserving unchanged document DOM and scroll position. Errors appear inline with Retry.
 
 Each rendered Mermaid diagram has an Expand button. The expanded view sits above all panes: drag to pan, scroll to zoom at the pointer, use Fit or double-click to fit, and use the percentage button for actual size. Keyboard controls are `+`/`-`, arrow keys, `0` (fit), `1` (actual size), and Escape (close). Tab stays inside the viewer; app shortcuts do not reach the panes. The expanded view is a snapshot so file updates do not interrupt inspection; close and reopen it for the latest diagram. Changing documents or closing the owner dismisses it. It uses the already sanitized SVG and opens no additional connection.
+
+Click a loaded Markdown image to expand it in the same viewer with the same zoom, pan, Fit and keyboard controls. Images can also be focused with Tab and expanded with Enter or Space. Clicking an image that is itself a hyperlink expands the image. The viewer uses the already loaded local or remote image bytes, at their natural dimensions, and preserves its snapshot during document or image refreshes. It does not enable network images or SVG image files. Navigation, clearing the document, or closing the pane dismisses the viewer.
 
 Mouse recovery and bounded wheel diagnostics remain on the original terminal: Ctrl+Shift+M or its tab context menu. Recovery temporarily suppresses wheel-to-arrow fallback only in the affected alternate screen; it does not force a live tmux session out of that screen. The complete reported sleep/tmux/agy dual-scroll incident remains unreproduced.

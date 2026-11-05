@@ -56,7 +56,7 @@ test('provider finds plain/quoted paths but never captures substrings of web URL
   const links = f.links();
   assert.deepEqual(links.map(link => link.text), ['README.md', '`docs/design notes.md`:4']);
   assert.deepEqual(links[0].range, { start: { x: 5, y: 1 }, end: { x: 13, y: 1 } });
-  const event = { prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+  const event = { button: 0, shiftKey: false, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
   links[0].activate(event);
   assert(event.prevented && event.stopped);
   assert.equal(opened[0].path, 'README.md');
@@ -76,8 +76,8 @@ test('Markdown labels open their destination, with no duplicate or web-label fil
   registerTerminalFileLinks(f.terminal, ref => opened.push(ref));
   const links = f.links();
   assert.deepEqual(links.map(link => link.text), ['plan.md', 'space']);
-  links[0].activate({ preventDefault() {}, stopPropagation() {} });
+  links[0].activate({ button: 0, shiftKey: false, preventDefault() {}, stopPropagation() {} });
   assert.deepEqual(opened[0], { path: '/absolute/project/actual.md', authority: null, scheme: 'path', line: 4 });
-  links[1].activate({ preventDefault() {}, stopPropagation() {} });
+  links[1].activate({ button: 0, shiftKey: false, preventDefault() {}, stopPropagation() {} });
   assert.equal(opened[1].path, 'docs/my plan.md');
 });

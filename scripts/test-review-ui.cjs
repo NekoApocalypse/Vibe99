@@ -53,6 +53,14 @@ const { mkdirSync } = require('node:fs');
         listShellProfiles: async () => ({ profiles: [], defaultProfile: '' }), detectShellProfiles: async () => [],
         detectWslProfiles: async () => [], addShellProfile: async () => ({}),
         writeClipboardText: async text => { window.__clipboard = text; }, readClipboardText: async () => '',
+        captureClipboard: async () => window.__clipboardContent || { text: '' },
+        getClipboardSnapshot: async () => ({ text: window.__clipboardContent?.text || '', hasImage: Boolean(window.__clipboardContent?.imageId) }),
+        resolveImagePath: async p => {
+          window.__imagePaths ||= []; window.__imagePaths.push(p);
+          if (window.__holdImage) await new Promise(resolve => { window.__releaseImage = resolve; });
+          if (window.__failImage) throw Error('Image transfer failed');
+          return p.target ? '/tmp/vibe99-images-1000/image-fixture.png' : 'C:/image folder/image-fixture.png';
+        },
         onTerminalData: fn => listen(dataHandlers, fn), onTerminalExit: fn => listen(exitHandlers, fn),
         onMenuAction: () => () => {}, onWorkspaceEvent: fn => listen(workspaceHandlers, fn),
         workspaceOpen: async p => { window.__opens.push(p); return { root: p.root }; },
@@ -96,17 +104,91 @@ const { mkdirSync } = require('node:fs');
       await page.mouse.click(point.x, point.y);
       if (ctrl) await page.keyboard.up('Control');
     }
-    await emit('p1', '\x1b[2J\x1b[H\x1b]8;;HTTPS://Example.com/osc\x07OSC LINK\x1b]8;;\x07\r\nhttps://example.com/plain\r\n\x1b]8;;file:///C:/secret\x07UNSAFE LINK\x1b]8;;\x07');
+    await emit('p1', '\x1b[?1000;1006h\x1b[2J\x1b[H\x1b]8;;HTTPS://Example.com/osc\x07OSC LINK\x1b]8;;\x07\r\nhttps://example.com/plain\r\n\x1b]8;;file:///C:/secret\x07UNSAFE LINK\x1b]8;;\x07');
+    await page.evaluate(() => { window.__writes = []; });
     await clickTerminalCell(0, 3, false);
-    assert.deepEqual(await page.evaluate(() => window.__links), []);
-    await clickTerminalCell(0, 3);
     await page.waitForFunction(() => window.__links.length === 1);
-    await clickTerminalCell(1, 7);
+    await clickTerminalCell(1, 7, false);
     await page.waitForFunction(() => window.__links.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.__writes), [], 'plain and OSC8 URL clicks never enter a mouse-reporting TUI');
     await clickTerminalCell(2, 3, true, false);
     assert.deepEqual(await page.evaluate(() => window.__links), ['https://example.com/osc', 'https://example.com/plain']);
     assert.deepEqual(dialogs, []);
-    console.log('PASS: actual OSC8/plaintext Ctrl-click uses normalized HTTP(S), rejects non-Markdown file URLs and never prompts');
+    const examples = ['https://www.saltdesignsystem.com/salt/foundations/density', 'https://www.saltdesignsystem.com/salt/patterns/navigation', 'https://www.saltdesignsystem.com/salt/patterns/button-bar', 'https://code.visualstudio.com/api/ux-guidelines/overview', 'https://blueprintjs.com/docs/'];
+    for (const url of examples) {
+      const cols = await page.evaluate(() => window.__review.paneNodeMap.get('p1').terminal.cols);
+      await emit('p1', '\x1b[2J\x1b[H' + ' '.repeat(cols - 12) + url);
+      const before = await page.evaluate(() => window.__links.length);
+      await page.evaluate(() => { window.__writes = []; });
+      await clickTerminalCell(1, 3, false);
+      assert.equal(await page.evaluate(() => window.__links.at(-1)), url, 'soft-wrapped URL continuation opens complete target');
+      assert.equal(await page.evaluate(() => window.__links.length), before + 1, 'exactly one open per gesture');
+      assert.deepEqual(await page.evaluate(() => window.__writes), []);
+      await page.keyboard.down('Shift');
+      await clickTerminalCell(1, 3, false);
+      await page.keyboard.up('Shift');
+      assert.equal(await page.evaluate(() => window.__links.length), before + 1, 'Shift selection does not open URL');
+      await clickTerminalCell(1, 3, true);
+      assert.equal(await page.evaluate(() => window.__links.length), before + 2, 'Ctrl-click remains supported');
+    }
+    await emit('p1', '\x1b[?1000;1006l');
+    console.log('PASS: single-click OSC8/plain URLs, five real documentation URLs across soft wraps, Ctrl-click compatibility, Shift selection, and no remote mouse reports');
+
+    await emit('p1', '\x1b[?2004h');
+    await page.evaluate(() => { window.__clipboardContent = { imageId: 'image-fixture.png' }; window.__writes = []; });
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Control+v');
+    await page.waitForFunction(() => window.__writes.length > 0);
+    assert.deepEqual(await page.evaluate(() => window.__writes.map(p => p.data)), ['\x1b[200~"C:/image folder/image-fixture.png"\x1b[201~']);
+    await page.evaluate(() => { window.__clipboardContent = { text: 'plain text' }; window.__writes = []; });
+    await page.keyboard.press('Control+Shift+v');
+    await page.waitForFunction(() => window.__writes.length > 0);
+    assert.deepEqual(await page.evaluate(() => window.__writes.map(p => p.data)), ['\x1b[200~plain text\x1b[201~']);
+    await page.evaluate(() => { window.__clipboardContent = { imageId: 'image-fixture.png' }; window.__contexts.p1 = { kind: 'ssh', target: 'test-host' }; window.__writes = []; });
+    await page.locator('.xterm-screen').click({ button: 'right', position: { x: 50, y: 60 } });
+    await page.getByText('Paste Image', { exact: true }).click();
+    await page.waitForFunction(() => window.__writes.length > 0);
+    assert.deepEqual(await page.evaluate(() => window.__writes.map(p => p.data)), ['\x1b[200~/tmp/vibe99-images-1000/image-fixture.png\x1b[201~']);
+    assert.equal(await page.evaluate(() => window.__imagePaths.at(-1).target), 'test-host');
+    await page.evaluate(() => { window.__contexts.p1 = { kind: 'local' }; window.__writes = []; window.__holdImage = true; });
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Control+v');
+    await page.waitForFunction(() => window.__releaseImage);
+    await page.keyboard.press('Control+v');
+    await page.locator('#tabs-add').click();
+    const pasteOther = await page.evaluate(() => window.__review.getPanes().at(-1).id);
+    await page.evaluate(() => { window.__releaseImage(); window.__holdImage = false; });
+    await page.waitForFunction(() => !document.querySelector('.clipboard-paste-notice'));
+    assert.deepEqual(await page.evaluate(() => window.__writes), [], 'image completion after changing panes must not type into either pane');
+    await page.locator(`[data-pane-id="${pasteOther}"] .tab-close`).click();
+    await page.evaluate(() => { window.__writes = []; window.__failImage = true; });
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Control+v');
+    await page.waitForFunction(() => document.body.textContent.includes('Error: Image transfer failed'));
+    assert.deepEqual(await page.evaluate(() => window.__writes), [], 'failed upload never pastes a local path remotely');
+    await page.evaluate(() => { window.__failImage = false; window.__holdImage = true; window.__releaseImage = null; });
+    await page.keyboard.press('Control+v');
+    await page.waitForFunction(() => window.__releaseImage);
+    await page.evaluate(() => { const n = window.__review.paneNodeMap.get('p1'); n.previewContextEpoch = (n.previewContextEpoch || 0) + 1; window.__releaseImage(); window.__holdImage = false; });
+    await page.waitForFunction(() => !document.querySelector('.clipboard-paste-notice'));
+    assert.deepEqual(await page.evaluate(() => window.__writes), [], 'return to local prompt cancels an in-flight remote paste');
+    await page.evaluate(() => { window.__contexts.p1 = { kind: 'unknown' }; });
+    await page.keyboard.press('Control+v');
+    await page.getByRole('heading', { name: 'Paste image into this terminal' }).waitFor();
+    await page.locator('input[name="target"]').fill('unavailable-test');
+    await page.evaluate(() => { window.__failImage = true; });
+    await page.getByRole('button', { name: 'Paste image', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.clipboard-paste-notice'));
+    assert.equal(await page.evaluate(() => window.__review.paneNodeMap.get('p1').imagePasteTarget), undefined, 'failed manual target is not remembered');
+    await page.evaluate(() => { window.__failImage = false; });
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Control+v');
+    await page.getByRole('heading', { name: 'Paste image into this terminal' }).waitFor();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => window.__writes), [], 'ambiguous or cancelled target cannot leak a file path');
+    await page.evaluate(() => { window.__contexts.p1 = { kind: 'local' }; });
+    await page.evaluate(() => { window.__creates = window.__creates.filter(p => p.paneId === 'p1'); window.__clipboardContent = { text: '' }; });
+    console.log('PASS: Ctrl+V image, Ctrl+Shift+V text, context-menu image, correct SSH path, bracketed paste without Enter/Ctrl+V, and stale focus cancellation');
 
     const originalWidth = await page.evaluate(() => window.__review.paneNodeMap.get('p1').root.getBoundingClientRect().width);
     const originalCols = await page.evaluate(() => window.__review.paneNodeMap.get('p1').terminal.cols);
@@ -182,8 +264,25 @@ const { mkdirSync } = require('node:fs');
     assert.deepEqual(await workspace.getByRole('button').allTextContents(), ['Close']);
     assert(!(await workspace.locator('.preview-document-retry').isVisible()));
     await assertOrdinaryGeometry();
+    // The source is now behind the reader, with a live mouse-reporting TUI.
+    const countBeforeActivate = (await paneOrder()).length;
+    await clickTerminalCell(0, 7, false);
+    assert.equal((await paneOrder()).length, countBeforeActivate, 'first click on inactive Markdown path only focuses');
+    assert.deepEqual(await page.evaluate(() => window.__writes), [], 'focus gesture sends no TUI mouse input');
+    assert(await page.locator('[data-pane-id="p1"]').evaluate(el => el.classList.contains('is-focused')));
+    await emit('p1', clear + 'https://example.com/focus-only');
+    await focus(firstCompanion);
+    const linkCount = await page.evaluate(() => window.__links.length);
+    await clickTerminalCell(0, 7, false);
+    assert.equal(await page.evaluate(() => window.__links.length), linkCount, 'inactive URL click only focuses');
+    await clickTerminalCell(0, 7, false);
+    await page.waitForFunction(() => window.__links.includes('https://example.com/focus-only'));
+    const beforeDocumentClick = await page.evaluate(() => window.__links.length);
+    await workspace.getByRole('link', { name: 'Project documentation' }).click();
+    assert.equal(await page.evaluate(() => window.__links.length), beforeDocumentClick, 'inactive preview link only focuses');
     await workspace.getByRole('link', { name: 'Project documentation' }).click();
     await page.waitForFunction(() => window.__links.includes('https://example.com/docs'));
+    console.log('PASS: inactive terminal file/URL and preview links consume the activation click; the next active click opens normally');
     await focus('p1');
     await page.locator('.pane:not(.pane-preview) .xterm-helper-textarea').focus();
     await page.keyboard.type('source-still-types');

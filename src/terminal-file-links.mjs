@@ -126,6 +126,7 @@ export function registerTerminalFileLinks(terminal, onOpen) {
     event.stopImmediatePropagation?.();
   }
   function activate(event, reference) {
+    if (event.button !== 0 || event.shiftKey) return;
     consume(event);
     if (!disposed) onOpen(reference, event);
   }
@@ -151,12 +152,12 @@ export function registerTerminalFileLinks(terminal, onOpen) {
     },
   });
   // xterm's link activation happens after its mousedown mouse report. Consume a
-  // hovered file link in capture phase, and activate it ourselves on mouseup.
+  // hovered file or web link in capture phase, and activate it on mouseup.
   // This avoids sending a click into an application with mouse tracking enabled.
   const element = terminal.element;
   const down = event => {
     const chosen = explicitHovered || hovered;
-    if (disposed || event.button !== 0 || !chosen) return;
+    if (disposed || event.button !== 0 || event.shiftKey || !chosen) return;
     consume(event);
     pressed = { link: chosen, x: event.clientX, y: event.clientY };
     consumeClick = true;
@@ -176,6 +177,10 @@ export function registerTerminalFileLinks(terminal, onOpen) {
   element?.addEventListener('click', click, true);
   element?.addEventListener('mouseleave', leave);
   return {
+    // Web/OSC8 providers share the same gesture interception as file links.
+    setExternalLink(activate) {
+      explicitHovered = !disposed && activate ? { activate } : null;
+    },
     // Feed this from xterm's public OSC8 linkHandler hover/leave callbacks.
     setExplicitReference(reference) {
       explicitHovered = !disposed && reference ? { activate: event => activate(event, reference) } : null;

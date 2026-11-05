@@ -20,4 +20,6 @@ dialog.diagram-viewer::backdrop { background: #0009; }
 .diagram-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
 .diagram-canvas.is-panning { cursor: grabbing; }
 .diagram-transform { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
+.preview-image img[src] { cursor: zoom-in; }
+.preview-image img:focus-visible { outline: 2px solid #85c9bd; outline-offset: 3px; }
 @media (max-width: 650px) { .diagram-help { display: none; } .diagram-viewer-toolbar { padding: 8px; gap: 5px; } }

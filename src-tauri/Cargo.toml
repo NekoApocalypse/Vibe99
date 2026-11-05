@@ -1,6 +1,6 @@
 [package]
 name = "vibe99"
-version = "0.8.1"
+version = "0.9.0"
 description = "Vibe99 terminal workspace"
 authors = [""]
 edition = "2021"
@@ -23,6 +23,7 @@ serde_json = "1"
 regex = "1"
 portable-pty = "0.8"
 base64 = "0.22"
+png = "0.18"
 tempfile = "3"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-fs = "2"

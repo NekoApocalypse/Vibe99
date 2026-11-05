@@ -6,3 +6,4 @@ pub mod workspace;
 pub mod wsl;
 
 pub mod terminal_context;
+pub mod clipboard_image;

@@ -284,7 +284,9 @@ const { mkdirSync } = require('node:fs');
     await page.waitForFunction(() => window.__links.includes('https://example.com/docs'));
     console.log('PASS: inactive terminal file/URL and preview links consume the activation click; the next active click opens normally');
     await focus('p1');
-    await page.locator('.pane:not(.pane-preview) .xterm-helper-textarea').focus();
+    // Use the same preventScroll focus path as the app. Direct DOM focus of
+    // xterm's hidden cursor input can scroll the whole stage in Chromium.
+    await page.evaluate(() => window.__review.paneNodeMap.get('p1').terminal.focus());
     await page.keyboard.type('source-still-types');
     await page.waitForFunction(() => window.__writes.filter(p => p.paneId === 'p1').map(p => p.data).join('').includes('source-still-types'));
     await emit('p1', clear + '\x1b]8;;file:///C:/review/second.md\x07OPEN SECOND\x1b]8;;\x07');

@@ -605,7 +605,8 @@ body {
   position: relative;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  /* Pane transforms own navigation; browser focus must not scroll this stage. */
+  overflow: clip;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
     rgba(255, 255, 255, 0.02);

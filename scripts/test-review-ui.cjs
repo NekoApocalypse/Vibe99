@@ -77,6 +77,11 @@ const { mkdirSync } = require('node:fs');
     });
     await page.goto(server.resolvedUrls.local[0]);
     await page.waitForFunction(() => window.__review?.paneNodeMap.get('p1')?.sessionReady);
+    assert.deepEqual(await page.evaluate(() => {
+      const stage = document.getElementById('stage');
+      stage.scrollLeft = 200; stage.scrollTop = 200;
+      return [stage.scrollLeft, stage.scrollTop];
+    }), [0, 0], 'pane stage cannot be scrolled independently of pane transforms');
     async function emit(paneId, text) {
       const sequence = await page.evaluate(({ paneId, text }) => window.__emit(paneId, text), { paneId, text });
       await page.waitForFunction(sequence => window.__acks.some(p => p.sequence === sequence), sequence);
@@ -96,6 +101,7 @@ const { mkdirSync } = require('node:fs');
           console.error(await page.evaluate(({ id, point }) => { const n=window.__review.paneNodeMap.get(id); return {
             id, point, cols:n.terminal.cols, rows:n.terminal.rows, text:n.terminal.buffer.active.getLine(0)?.translateToString(true),
             hit:document.elementFromPoint(point.x,point.y)?.outerHTML.slice(0,500), focused:document.activeElement?.className,
+            scrolls: [...document.querySelectorAll('body,.app-shell,.stage-wrap,.stage,.pane')].map(e=>({name:e.className||e.tagName,left:e.scrollLeft,top:e.scrollTop})),
           }; }, { id:paneId, point }));
           throw error;
         }
@@ -206,6 +212,7 @@ const { mkdirSync } = require('node:fs');
     }
     async function assertOrdinaryGeometry() {
       await settled();
+      assert.equal(await page.locator('#stage').evaluate(e=>e.scrollLeft), 0, 'focus and preview actions never shift the pane stage');
       const geometry = await page.evaluate(() => {
         const stage = document.getElementById('stage').getBoundingClientRect();
         const panes = window.__review.getPanes().map(p => {

@@ -250,7 +250,7 @@ export function createMarkdownPreview({ container, readImage, onOpen, openExtern
       return true;
     },
     clear(message = '') { dismissViewer(); generation++; imageGeneration++; previous = null; container.textContent = message; },
-    focus() { container.focus(); },
+    focus() { container.focus({ preventScroll: true }); },
     dispose() { dismissViewer(); disposed = true; generation++; imageGeneration++; container.removeEventListener('click', click); container.removeEventListener('keydown', imageKey); container.replaceChildren(); },
   };
 }

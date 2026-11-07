@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.10.1 - 2026-11-08
+
+### Fixed
+
+- Keep pane positioning stable when focus moves between a preview and a terminal. The pane stage cannot scroll independently of its layout, and document focus no longer requests browser scrolling.
+
+
 ## 0.10.0 - 2026-11-08
 
 ### Added

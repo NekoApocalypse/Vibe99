@@ -210,6 +210,7 @@ function createTauriBridge(tauri) {
       return invoke('workspace_request', payload);
     },
     workspaceClose: (payload) => invoke('workspace_close', payload),
+    savePreviewAs: (payload) => invoke('preview_save_as', payload),
     onWorkspaceEvent: (handler) => onTauriEvent('vibe99:workspace-event', handler),
     showContextMenu: () => {},
     loadSettings: () => invoke('settings_load'),
@@ -1144,7 +1145,7 @@ async function promptPreviewFile() {
     fields: [{ name: 'path', label: 'File', placeholder: 'path/to/plan.md', required: true }] });
   if (!value) return;
   const reference = parseFileReference(value.path);
-  if (!reference) { reportError(new Error('Choose a Markdown file path.')); return; }
+  if (!reference) { reportError(new Error('Choose a Markdown, PDF, or image file path.')); return; }
   if (focused?.kind === 'preview' && focused.documentLocation) {
     let location = { ...focused.documentLocation, path: reference.path };
     if (reference.scheme === 'vscode-remote' && reference.authority) location = { target: reference.authority, root: previewDirname(reference.path), path: reference.path };
@@ -1595,7 +1596,7 @@ function createPreviewPane(pane) {
     node.workspace = createPreviewDocument({ container: host, workspaceId: 'document-' + crypto.randomUUID(),
       api: { open: p => bridge.workspaceOpen(p), request: p => bridge.workspaceRequest(p),
         close: p => bridge.workspaceClose(p), onEvent: h => bridge.onWorkspaceEvent(h) },
-      openExternalUrl: openSafeExternalUrl,
+      openExternalUrl: openSafeExternalUrl, saveAs: p => bridge.savePreviewAs(p),
       onTitle(title) { const entry = panes.find(p => p.id === pane.id); if (entry) { entry.terminalTitle = title; scheduleTitleRender(pane.id); } },
       onClose: () => closePane(panes.findIndex(p => p.id === pane.id)) });
     node.workspace.setCloseEnabled(panes.length > 1);
@@ -2570,7 +2571,7 @@ function openTabSwitcher() {
   items.push({ id: 'command:markdown', label: 'Preview a file from this pane', accent: '#61afef' });
   const activePreview = paneNodeMap.get(focusedPaneId)?.workspace;
   if (activePreview) {
-    items.push({ id: 'command:refresh-preview', label: 'Refresh Markdown preview', accent: '#61afef' });
+    items.push({ id: 'command:refresh-preview', label: 'Refresh file preview', accent: '#61afef' });
 
   }
 
@@ -2580,7 +2581,7 @@ function openTabSwitcher() {
 
     else focusPane(id);
   }, {
-    placeholder: 'Switch tab or open Markdown…',
+    placeholder: 'Switch tab or open a file…',
     emptyText: 'No matching tabs',
   });
 }

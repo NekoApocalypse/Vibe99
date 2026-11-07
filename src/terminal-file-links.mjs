@@ -1,4 +1,5 @@
-// Markdown references only. URI authorities stay explicit so callers can choose
+import { previewKind } from './preview-formats.mjs';
+// Supported document references. URI authorities stay explicit so callers can choose
 // the correct local/SSH workspace instead of guessing a host from a path.
 export function parseFileReference(value) {
   if (typeof value !== 'string' || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value)) return null;
@@ -35,8 +36,8 @@ export function parseFileReference(value) {
     text = text.slice(0, -location[0].length);
   }
   text = text.replaceAll('\\', '/');
-  if (!/\.(?:md|markdown|mdown)$/i.test(text) || !text || /[\x00-\x1f\x7f<>"'`|?#]/.test(text)) return null;
-  if (!text.split('/').at(-1).replace(/\.(?:md|markdown|mdown)$/i, '')) return null;
+  if (!previewKind(text) || !text || /[\x00-\x1f\x7f<>"'`|?#]/.test(text)) return null;
+  if (!text.split('/').at(-1).replace(/\.[^.]+$/, '')) return null;
   if (text.includes('://') || /:/.test(text.replace(/^[a-z]:/i, ''))) return null;
   if (/^[a-z]:[^/]/i.test(text) || text.startsWith('//')) return null;
   text = text.replace(/\/{2,}/g, '/');

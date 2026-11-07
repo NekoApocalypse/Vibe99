@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFileReference, registerTerminalFileLinks } from '../src/terminal-file-links.mjs';
 
+test('recognizes PDF and raster image paths without capturing web URLs or executable formats', () => {
+  for (const path of ['C:/docs/report.PDF', '/tmp/图.png', 'photos/test.jpeg', 'plot.webp', 'animation.gif', 'photo.avif', 'old.bmp']) {
+    assert.equal(parseFileReference(path)?.path, path);
+    const fixture = terminalFor('Open ' + path);
+    const registration = registerTerminalFileLinks(fixture.terminal, () => {});
+    assert.equal(fixture.links()[0]?.text, path); registration.dispose();
+  }
+  for (const path of ['https://example.com/a.pdf', 'a.svg', 'a.html', 'a.exe']) assert.equal(parseFileReference(path), null);
+});
+
 test('parses Windows/Unix/relative Markdown paths, quotes, spaces and locations', () => {
   for (const [value, path, location] of [
     ['README.md', 'README.md', {}],

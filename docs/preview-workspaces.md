@@ -1,8 +1,8 @@
 # File previews
 
-Click a Markdown file reference in an agent's terminal output to open an ordinary document pane immediately to its right. The reader contains the document name and Close; it creates any required read-only connection internally and does not start another shell.
+Click a Markdown, PDF, or raster image file reference in an agent's terminal output to open an ordinary document pane immediately to its right. The reader contains the document name, Save As and Close; it creates any required read-only connection internally and does not start another shell.
 
-Local and remote `.md`, `.markdown`, and `.mdown` references are supported, including terminal hyperlinks, absolute paths, relative paths, quoted paths with spaces, and line suffixes. Web links open with a left-click in an active terminal pane; Ctrl-click also works. The MD button and command palette also accept a file path when there is no clickable reference.
+Local and remote `.md`, `.markdown`, `.mdown`, `.pdf`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, and `.bmp` references are supported, including terminal hyperlinks, absolute paths, relative paths, quoted paths with spaces, and line suffixes. Web links open with a left-click in an active terminal pane; Ctrl-click also works. The File button and command palette also accept a file path when there is no clickable reference.
 
 Each resolved terminal file request creates a new document pane. While file context is being resolved, rapid clicks retain only the latest pending request; links within a document navigate that reader. After insertion, a document uses the same width, tab ordering, dragging, stacking, and focus rules as terminal panes. It is not paired with its source: either can be moved or closed independently. The last remaining pane cannot be closed with its tab or document Close button; the window can still be closed normally. Preview connections and documents are not restored automatically at startup.
 
@@ -11,6 +11,10 @@ The existing visual model is unchanged: the focused pane has its own opaque read
 The first click anywhere in an inactive pane only focuses it. Links, Markdown paths, and document controls respond on the next click while that pane is active. The activation gesture is also withheld from terminal mouse reporting.
 
 Middle-click any terminal or document tab to close it using the same cleanup and last-pane protection as its Close button. Closing a background tab preserves the focused pane.
+
+**Save As…** opens a native local save dialog in Downloads with a Windows-safe version of the original filename suggested. Local and SSH documents use the same behavior: it saves the displayed Markdown source snapshot as UTF-8, including its line endings. It also works for an already-loaded document after SSH disconnects. Refreshes while the dialog is open do not change the selected snapshot. Cancel writes nothing; write failures are shown inline. This saves the Markdown file alone; relative image/file references remain unchanged, and any original UTF-8 byte-order mark removed by preview loading is not restored.
+
+For PDFs and images, Save As preserves the original loaded bytes and file type. No conversion or recompression is performed.
 
 ## Finding the file
 
@@ -21,6 +25,10 @@ Relative remote paths also need a working-folder report from the remote terminal
 This is a file reader, not a filesystem sandbox: Folder resolves relative paths, and absolute references may open other readable files. Connections are owned by the document pane and close with it, independently of the source terminal. A remote helper exits after 60 seconds without a heartbeat; no permanent daemon is installed. No extra terminal is created for previewing.
 
 ## Rendering and recovery
+
+PDFs use bundled PDF.js with local fonts and decoders, without a browser plugin or CDN. Previous/Next, page-number entry, zoom, and Fit width control one rendered page at a time. Canvas allocation is bounded, and closing or navigating away from the document releases its worker. This first viewer displays pages only: password-protected documents, text selection/search, interactive forms, and PDF link actions are not supported. PDFs and standalone images are limited to 16 MiB; standalone images above 100 megapixels are rejected after decoding. SVG files are not supported.
+
+Standalone images fit inside the pane. Click or press Enter on the image to use the same expanded zoom/pan viewer as Markdown images. PDF and image panes retain the ordinary tab focus, stacking, reordering, and close behavior.
 
 The reader supports code highlighting, KaTeX equations, Mermaid diagrams, and local/remote raster images. Text must be UTF-8 up to 4 MiB; images are limited to 16 MiB. Raw HTML and network images are disabled. It checks modification stamps every two seconds while visible, preserving unchanged document DOM and scroll position. Errors appear inline with Retry.
 

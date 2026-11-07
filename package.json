@@ -1,13 +1,13 @@
 {
   "name": "vibe99",
   "productName": "Vibe99",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Vibe99 terminal application",
   "scripts": {
-    "postinstall": "node scripts/patch-xterm-link-cache.cjs",
-    "previte:build": "node scripts/patch-xterm-link-cache.cjs",
+    "postinstall": "node scripts/patch-xterm-link-cache.cjs && node scripts/prepare-pdf-assets.cjs",
+    "previte:build": "node scripts/patch-xterm-link-cache.cjs && node scripts/prepare-pdf-assets.cjs",
     "test:link-cache": "node scripts/test-terminal-link-cache.cjs",
     "test": "node --test tests/terminal-stream.test.mjs tests/terminal-recovery.test.mjs tests/preview-input.test.mjs tests/terminal-file-links.test.mjs",
     "test:ui": "node scripts/test-terminal-ui.cjs",
@@ -24,7 +24,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:review": "tauri build --config scripts/tauri-review.conf.json",
-    "test:file-links": "node scripts/test-terminal-file-links.cjs"
+    "test:file-links": "node scripts/test-terminal-file-links.cjs",
+    "test:media": "node scripts/test-media-preview.cjs"
   },
   "overrides": {
     "mermaid": {
@@ -48,6 +49,7 @@
     "highlight.js": "^11.12.0",
     "katex": "^0.18.2",
     "markdown-it": "^15.0.3",
-    "mermaid": "^11.17.2"
+    "mermaid": "^11.17.2",
+    "pdfjs-dist": "6.5.438"
   }
 }

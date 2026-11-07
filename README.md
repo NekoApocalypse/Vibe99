@@ -17,7 +17,7 @@ One developer now runs four or five coding agents at once. Traditional terminals
 - **High-contrast palette to lock onto any agent visually.** Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.
 - **Fully customizable UI.** Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.
 - **Full keyboard control, zero mouse required.** Cycle recent panes with `Ctrl+Tab`, step left or right with `Ctrl+Left` and `Ctrl+Right`, fuzzy-search tabs via the command palette (`Ctrl+Shift+O`), or enter Vim-style navigation mode (`Ctrl+B`) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.
-- **Read agent-generated Markdown in a pane.** Click a Markdown path in terminal output to open a document pane immediately to its right, then drag, focus, and close it like any other pane. Local files and simple existing SSH sessions work automatically; see [file preview details and limits](docs/preview-workspaces.md).
+- **Read agent-generated files in a pane.** Click a Markdown, PDF, or image path in terminal output to open a document pane immediately to its right, then drag, focus, and close it like any other pane. PDFs have page and zoom controls; images expand for zoom and pan. Save As exports a local copy to Downloads by default. Local files and simple existing SSH sessions work automatically; see [file preview details and limits](docs/preview-workspaces.md).
 - **Native Tauri 2 + Rust performance.** Powered by Tauri 2 and WebGL-accelerated rendering. Launches fast, stays light on memory, and automatically restores your terminal pane layout, working directories, and tab titles on restart.
 - **Power features for multi-agent workflows.** Optional **breathing alerts** softly pulse a background pane when its output finishes settling; **customizable Shell Profiles** let you configure and switch shells per pane; and **Windows WSL integration** discovers your installed Linux distributions in one click.
 
@@ -27,7 +27,7 @@ One developer now runs four or five coding agents at once. Traditional terminals
 
 2. **Preferred for source builds: let your agent do it.** Copy this repository URL into your coding agent (Claude Code, Codex, Antigravity, or OpenCode) and ask it to build and launch Vibe99.
 
-3. **Build it yourself.** Requires Node.js 22+ and a stable Rust toolchain.
+3. **Build it yourself.** Requires Node.js 22.13+ and a stable Rust toolchain.
 
    ```bash
    npm ci

@@ -25,6 +25,7 @@ fn main() {
             workspace::workspace_open,
             workspace::workspace_request,
             workspace::workspace_close,
+            vibe99_lib::document_export::preview_save_as,
             terminal::terminal_create,
             terminal::terminal_acknowledge,
             terminal::terminal_write,

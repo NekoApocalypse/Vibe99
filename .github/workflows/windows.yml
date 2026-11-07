@@ -45,6 +45,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:review
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:preview
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:media
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Tauri app
         run: npx tauri build

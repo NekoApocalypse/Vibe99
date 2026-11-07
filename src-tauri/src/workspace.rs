@@ -396,6 +396,21 @@ fn local_request(root: &Path, method: &str, args: Value) -> Reply {
     let path = local_path(root, input)?;
     match method {
         "stat" => stat_local(&path),
+        "media" => {
+            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let mime = match extension.as_str() {
+                "pdf" => "application/pdf", "png" => "image/png",
+                "jpg" | "jpeg" => "image/jpeg", "gif" => "image/gif",
+                "webp" => "image/webp", "avif" => "image/avif", "bmp" => "image/bmp",
+                _ => return Err("Unsupported preview format".into()),
+            };
+            let before = stat_local(&path)?;
+            let bytes = read_bounded(&path, 16 * 1024 * 1024)?;
+            if stat_local(&path)?["stamp"] != before["stamp"] {
+                return Err("File changed while reading; retry".into());
+            }
+            Ok(json!({"path":path,"mime":mime,"data":STANDARD.encode(bytes),"stamp":before["stamp"]}))
+        }
         "read" => {
             let before = stat_local(&path)?;
             let bytes = read_bounded(&path, 4 * 1024 * 1024)?;
@@ -535,6 +550,7 @@ pub async fn workspace_request(
         method.as_str(),
         "stat"
             | "read"
+            | "media"
             | "image"
             | "list"
             | "terminal-start"
@@ -605,5 +621,21 @@ mod tests {
             display_path(PathBuf::from(r"\\?\C:\work\a.md")),
             PathBuf::from(r"C:\work\a.md")
         );
+    }
+
+    #[test]
+    fn media_reads_preserve_binary_and_enforce_format_and_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = b"%PDF-1.4\n\0\xff\n";
+        fs::write(dir.path().join("report.pdf"), data).unwrap();
+        let result = local_request(dir.path(), "media", json!({"path":"report.pdf"})).unwrap();
+        assert_eq!(result["mime"], "application/pdf");
+        assert_eq!(STANDARD.decode(result["data"].as_str().unwrap()).unwrap(), data);
+        assert!(result["stamp"].is_string());
+        fs::write(dir.path().join("unsafe.svg"), b"<svg/>").unwrap();
+        assert!(local_request(dir.path(), "media", json!({"path":"unsafe.svg"})).is_err());
+        let file = fs::File::create(dir.path().join("large.pdf")).unwrap();
+        file.set_len(16 * 1024 * 1024 + 1).unwrap();
+        assert!(local_request(dir.path(), "media", json!({"path":"large.pdf"})).is_err());
     }
 }

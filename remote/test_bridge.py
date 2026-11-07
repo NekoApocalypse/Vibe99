@@ -7,6 +7,19 @@ module = ast.Module(body=[n for n in ast.parse(source).body if isinstance(n,(ast
 ns = dict(base64=base64,os=os,stat=stat,urllib=urllib,threading=threading,time=time,MAX_TEXT=4*1024*1024,MAX_IMAGE=16*1024*1024)
 exec(compile(module,'vibe99_bridge.py','exec'),ns)
 class BridgeTests(unittest.TestCase):
+    def test_binary_media_and_limits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=pathlib.Path(folder)/'report.pdf'; data=b'%PDF-1.4\n\x00\xff'
+            p.write_bytes(data)
+            result=ns['read_file']({'path':str(p)},media=True)
+            self.assertEqual(result['mime'],'application/pdf')
+            self.assertEqual(base64.b64decode(result['data']),data)
+            self.assertIn('stamp',result)
+            p=pathlib.Path(folder)/'unsafe.svg';p.write_text('<svg/>')
+            with self.assertRaises(ValueError): ns['read_file']({'path':str(p)},media=True)
+            p=pathlib.Path(folder)/'large.pdf'
+            with p.open('wb') as out: out.truncate(16*1024*1024+1)
+            with self.assertRaises(ValueError): ns['read_file']({'path':str(p)},media=True)
     def setUp(self): self.original = dict(ns)
     def tearDown(self): ns.clear(); ns.update(self.original)
     def test_terminal_exit_cannot_overtake_queued_data(self):

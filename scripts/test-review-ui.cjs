@@ -47,6 +47,7 @@ const { mkdirSync } = require('node:fs');
         writeTerminal: async p => { window.__writes.push(p); }, acknowledgeTerminal: async p => { window.__acks.push(p); },
         resizeTerminal: async p => { window.__resizes.push(p); }, destroyTerminal: async p => { window.__destroys.push(p); },
         closeWindow: async () => { window.__windowCloses++; }, openExternalUrl: async url => { window.__links.push(url); },
+        savePreviewAs: async value => { (window.__documentSaves ||= []).push(value); return 'C:/Downloads/export.md'; },
         terminalPreviewContext: async p => { window.__contextCalls.push(p); return window.__contexts[p.paneId] || { kind: 'local' }; },
         loadSettings: async () => ({ version: 4, session: { panes: [{ accent: '#9b5de5', cwd: 'C:/review', kind: 'terminal' }], focusedPaneIndex: 0 } }),
         saveSettings: async data => { window.__saved.push(data); return {}; },
@@ -261,8 +262,11 @@ const { mkdirSync } = require('node:fs');
     assert.deepEqual(await page.evaluate(() => window.__writes), [], 'plain file click must not report mouse input');
     assert.equal(await page.evaluate(() => window.__creates.length), 1, 'a document never starts another terminal');
     assert.equal(await workspace.locator('input, select, textarea, .preview-toolbar, .preview-terminal-panel').count(), 0);
-    assert.deepEqual(await workspace.getByRole('button').allTextContents(), ['Close']);
+    assert.deepEqual(await workspace.getByRole('button').allTextContents(), ['Save As…', 'Close']);
     assert(!(await workspace.locator('.preview-document-retry').isVisible()));
+    await workspace.getByRole('button', { name: 'Save Markdown as' }).click();
+    await page.waitForFunction(() => window.__documentSaves?.length === 1);
+    assert.equal(await page.evaluate(() => window.__documentSaves[0].filename), 'README.md');
     await assertOrdinaryGeometry();
     // The source is now behind the reader, with a live mouse-reporting TUI.
     const countBeforeActivate = (await paneOrder()).length;

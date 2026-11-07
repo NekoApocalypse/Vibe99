@@ -82,7 +82,7 @@ def image_path(args):
         if os.path.isfile(candidate): return candidate
     raise ValueError('Image not found')
 
-def read_file(args, image=False):
+def read_file(args, image=False, media=False):
     path = image_path(args) if image else resolve(args['path'])
     before = stat_file(path)
     if before['directory']: raise ValueError('Choose a regular file')
@@ -90,12 +90,14 @@ def read_file(args, image=False):
     with os.fdopen(fd, 'rb') as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise ValueError('Choose a regular file')
-        data = stream.read((MAX_IMAGE if image else MAX_TEXT) + 1)
-    if len(data) > (MAX_IMAGE if image else MAX_TEXT): raise ValueError('File exceeds preview size limit')
+        data = stream.read((MAX_IMAGE if image or media else MAX_TEXT) + 1)
+    if len(data) > (MAX_IMAGE if image or media else MAX_TEXT): raise ValueError('File exceeds preview size limit')
     if stat_file(path)['stamp'] != before['stamp']: raise ValueError('File changed while reading; retry')
-    if image:
+    if image or media:
         mime = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.avif':'image/avif','.bmp':'image/bmp'}.get(os.path.splitext(path)[1].lower())
+        if media and path.lower().endswith('.pdf'): mime = 'application/pdf'
         if not mime: raise ValueError('Unsupported image format')
+        if media: return dict(path=path, mime=mime, data=base64.b64encode(data).decode(), stamp=before['stamp'])
         return dict(path=path, url='data:' + mime + ';base64,' + base64.b64encode(data).decode())
     if b'\0' in data: raise ValueError('Binary files cannot be previewed')
     return dict(path=path, text=data.decode('utf-8-sig'), stamp=before['stamp'])
@@ -249,6 +251,7 @@ def dispatch(method,args):
         return dict(root=root,home=os.path.expanduser('~'),kind='ssh')
     if method == 'stat': return stat_file(args['path'])
     if method == 'read': return read_file(args)
+    if method == 'media': return read_file(args,media=True)
     if method == 'image': return read_file(args,True)
     if method == 'list': return list_dir(args)
     if method == 'terminal-start': return start_terminal(args)

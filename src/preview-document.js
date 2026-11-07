@@ -1,30 +1,38 @@
 import { createMarkdownPreview } from './markdown-preview.js';
 import { resolvePreviewPath } from './preview-paths.js';
+import { previewKind } from './preview-formats.mjs';
+import { createFileMediaPreview } from './file-media-preview.js';
 import './preview-document.css';
 
 /** A companion reader opened directly from a file link in an existing terminal. */
-export function createPreviewDocument({ container, workspaceId, api, openExternalUrl, onTitle = () => {}, onClose = () => {} }) {
+export function createPreviewDocument({ container, workspaceId, api, openExternalUrl, saveAs, onTitle = () => {}, onClose = () => {} }) {
   const element = document.createElement('section');
   element.className = 'preview-workspace preview-document';
   element.setAttribute('aria-label', 'Document preview');
   element.innerHTML = `
     <header class="preview-document-header">
       <span class="preview-document-name">Document</span>
+      <button class="preview-document-save" type="button" aria-label="Save Markdown as" title="Save a local copy of the displayed Markdown" disabled>Save As…</button>
       <button class="preview-document-close" type="button" aria-label="Close document preview" title="Close document preview">Close</button>
     </header>
     <div class="preview-document-status" role="status" aria-live="polite" hidden>
       <span></span><button type="button" class="preview-document-retry" hidden>Retry</button>
     </div>
-    <div class="preview-scroll"><article></article></div>`;
+    <div class="preview-scroll"><article></article><div class="file-media-preview" hidden></div></div>`;
   container.appendChild(element);
   const name = element.querySelector('.preview-document-name');
   const closeButton = element.querySelector('.preview-document-close');
+  const saveButton = element.querySelector('.preview-document-save');
   const status = element.querySelector('.preview-document-status');
   const statusText = status.querySelector('span');
   const retryButton = element.querySelector('.preview-document-retry');
   const scroll = element.querySelector('.preview-scroll');
+  const markdownHost = scroll.querySelector('article');
+  const mediaHost = scroll.querySelector('.file-media-preview');
   let disposed = false, generation = 0, connection = null, requested = null, active = null, unlisten = null;
   let polling = false, busy = false, statusKind = '';
+  let saving = false;
+  const updateSaveButton = () => { saveButton.disabled = !active || saving || typeof saveAs !== 'function'; };
   const current = (scope, revision = generation) => !disposed && connection === scope && revision === generation;
   const request = (scope, method, args) => api.request({ workspaceId: scope.id, method, args });
   const closeScope = (scope) => scope && Promise.resolve().then(() => api.close({ workspaceId: scope.id })).catch(() => {});
@@ -33,7 +41,7 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
     statusKind = kind;
     status.hidden = !text;
     statusText.textContent = text;
-    status.classList.toggle('is-error', kind === 'error' || kind === 'stale');
+    status.classList.toggle('is-error', kind === 'error' || kind === 'stale' || kind === 'save-error');
     retryButton.hidden = kind !== 'error' && kind !== 'stale';
     element.setAttribute('aria-busy', String(kind === 'loading'));
   }
@@ -54,6 +62,7 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
     onOpen(path) { return requested && open({ ...requested, path }); },
     onError(error) { showStatus(errorMessage(error), 'error'); },
   });
+  const media = createFileMediaPreview({ container: mediaHost, onError(error) { showStatus(errorMessage(error), 'error'); } });
 
   function ensureConnection({ target, root }) {
     if (connection && connection.target === target && (connection.inputRoot === root || connection.root === root) && !connection.failed) return connection;
@@ -85,21 +94,29 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
       const path = options?.path;
       if (typeof root !== 'string' || !root || typeof path !== 'string' || !path) throw new Error('The file link has no folder or document path.');
       if (target !== null && typeof target !== 'string') throw new Error('The SSH target is invalid.');
+      const kind = previewKind(path);
+      if (!kind) throw new Error('Choose a Markdown, PDF, or supported image file.');
       const sameRoot = requested && (requested.root === root || (connection?.target === target && (connection.inputRoot === root || connection.root === root)));
       const pathRoot = sameRoot && connection ? connection.root : root;
       const contextChanged = !requested || requested.target !== target || !sameRoot || resolvePreviewPath(pathRoot, requested.path) !== resolvePreviewPath(pathRoot, path);
       requested = { target, root, path };
-      if (contextChanged) { active = null; preview.clear(); scroll.scrollTop = 0; }
+      if (contextChanged) { active = null; updateSaveButton(); preview.clear(); media.clear(); scroll.scrollTop = 0; }
       busy = true;
       if (!quiet) { showName(path, target); showStatus(`Opening ${name.textContent}…`, 'loading'); }
       scope = ensureConnection(requested);
       if (!await scope.promise || !current(scope, revision)) return false;
       const resolvedPath = resolvePreviewPath(scope.root, path);
-      const file = await request(scope, 'read', { path: resolvedPath, root: scope.root });
+      const file = await request(scope, kind === 'markdown' ? 'read' : 'media', { path: resolvedPath, root: scope.root });
       if (!current(scope, revision)) return false;
       const finalPath = file.path || resolvedPath;
-      preview.render({ text: file.text, path: finalPath, root: scope.root, refreshImages });
-      active = { path: finalPath, stamp: file.stamp };
+      markdownHost.hidden = kind !== 'markdown'; mediaHost.hidden = kind === 'markdown';
+      saveButton.setAttribute('aria-label', kind === 'markdown' ? 'Save Markdown as' : 'Save file as');
+      saveButton.title = 'Save a local copy of the displayed file';
+      if (kind === 'markdown') preview.render({ text: file.text, path: finalPath, root: scope.root, refreshImages });
+      else { active = null; updateSaveButton(); await media.render({ ...file, path: finalPath }); }
+      if (!current(scope, revision)) return false;
+      active = { path: finalPath, stamp: file.stamp, ...(kind === 'markdown' ? {text:file.text} : {data:file.data}) };
+      updateSaveButton();
       requested = { target, root: scope.root, path: finalPath };
       showName(finalPath, target);
       showStatus();
@@ -110,6 +127,17 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
     } finally { if (!disposed && revision === generation) busy = false; }
   }
   function open(options) { return load(options); }
+  async function save() {
+    if (disposed || saving || !active || typeof saveAs !== 'function') return;
+    const snapshot = active;
+    saving = true; updateSaveButton();
+    try {
+      const destination = await saveAs({ filename: snapshot.path.replaceAll('\\', '/').split('/').pop(), ...(snapshot.data !== undefined ? {data:snapshot.data} : {text:snapshot.text}) });
+      if (!disposed && active === snapshot && destination) showStatus(`Saved to ${destination}`, 'saved');
+    } catch (error) {
+      if (!disposed && active === snapshot) showStatus(`Could not save this document: ${errorMessage(error)}`, 'save-error');
+    } finally { saving = false; if (!disposed) updateSaveButton(); }
+  }
   function refresh() { return requested ? load(requested, { refreshImages: true }) : Promise.resolve(false); }
   async function poll() {
     if (disposed || polling || busy || !connection?.ready || !active || document.hidden || !element.getClientRects().length || !element.clientWidth || !element.clientHeight) return;
@@ -129,10 +157,11 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
     disposed = true; generation++;
     clearInterval(interval); unlisten?.();
     const scope = connection; connection = null;
-    preview.dispose(); element.remove();
+    preview.dispose(); media.dispose(); element.remove();
     void closeScope(scope);
   }
   closeButton.addEventListener('click', () => { dispose(); onClose(); });
+  saveButton.addEventListener('click', () => { void save(); });
   retryButton.addEventListener('click', () => { void refresh(); });
   const interval = setInterval(() => { void poll(); }, 2000);
   Promise.resolve().then(() => api.onEvent?.((event) => {
@@ -151,7 +180,7 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
   return {
     open, refresh, dispose,
     setCloseEnabled(enabled) { closeButton.disabled = !enabled; },
-    focus() { if (!disposed) preview.focus(); },
+    focus() { if (!disposed) (mediaHost.hidden ? preview : media).focus(); },
     blur() { if (element.contains(document.activeElement)) document.activeElement.blur(); },
     resize() { /* Document layout follows its companion container. */ },
   };

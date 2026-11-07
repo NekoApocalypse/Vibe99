@@ -2,6 +2,18 @@
 
 <!-- towncrier release notes start -->
 
+## 0.10.0 - 2026-11-08
+
+### Added
+
+- Add Save As beside Close in Markdown previews. Local and SSH documents use the same native local save dialog, starting in Downloads with the source filename, and save the displayed Markdown snapshot as UTF-8.
+- Open local and SSH PDF and raster image paths directly in ordinary preview panes. PDFs support page selection, zoom, and fit-to-width; images use the shared expand, zoom, and pan viewer. Save As exports the displayed file to a local destination, defaulting to Downloads.
+
+### Misc
+
+- Use xterm's public focus method in the renderer regression test to avoid browser scrolling of its hidden input, and run the UI suite on Windows main-branch validation.
+
+
 ## 0.9.0 - 2026-11-05
 
 ### Added

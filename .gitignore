@@ -1,4 +1,6 @@
 node_modules/
+src/public/pdfjs/
+__pycache__/
 artifacts/*
 !artifacts/readme-demo.gif
 origin_assets/*

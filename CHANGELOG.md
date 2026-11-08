@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.10.2 - 2026-11-08
+
+### Fixed
+
+- Move PDF page and zoom controls into the existing document header beside Save As and Close, removing the second toolbar row.
+
+
 ## 0.10.1 - 2026-11-08
 
 ### Fixed

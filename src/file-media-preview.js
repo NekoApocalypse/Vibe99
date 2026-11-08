@@ -10,7 +10,7 @@ export function decodeMedia(file) {
 }
 
 /** One owned renderer per document; workers, canvases and URLs die with the pane. */
-export function createFileMediaPreview({ container, onError }) {
+export function createFileMediaPreview({ container, controlsHost, onError }) {
   let revision = 0, disposed = false, url = null, closeViewer = null, loadingTask = null;
   let pdf = null, renderTask = null, pageNumber = 1, zoom = null, pageRevision = 0, resizeTimer;
   let toolbar, viewport, label, pageInput, canvas;
@@ -24,6 +24,7 @@ export function createFileMediaPreview({ container, onError }) {
     if (url) URL.revokeObjectURL(url);
     url = null;
     if (canvas) { canvas.width = 0; canvas.height = 0; }
+    toolbar?.remove();
     canvas = null; toolbar = null; viewport = null;
     container.replaceChildren();
   }
@@ -105,7 +106,8 @@ export function createFileMediaPreview({ container, onError }) {
     toolbar.innerHTML = `<button data-action="previous" aria-label="Previous PDF page">←</button><input type="number" min="1" aria-label="PDF page"><span></span><button data-action="next" aria-label="Next PDF page">→</button><button data-action="out" aria-label="Zoom PDF out">−</button><button data-action="in" aria-label="Zoom PDF in">+</button><button data-action="fit">Fit width</button>`;
     label = toolbar.querySelector('span'); pageInput = toolbar.querySelector('input'); pageInput.max = String(pdf.numPages);
     viewport = document.createElement('div'); viewport.className = 'file-media-viewport';
-    container.append(toolbar, viewport);
+    controlsHost.append(toolbar);
+    container.append(viewport);
     pageInput.addEventListener('change', () => { pageNumber = Math.max(1, Math.min(pdf.numPages, Number(pageInput.value) || 1)); viewport.scrollTop = 0; void draw(); });
     toolbar.addEventListener('click', event => {
       const action = event.target.closest('button')?.dataset.action;

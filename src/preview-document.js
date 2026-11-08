@@ -12,6 +12,7 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
   element.innerHTML = `
     <header class="preview-document-header">
       <span class="preview-document-name">Document</span>
+      <div class="preview-document-controls"></div>
       <button class="preview-document-save" type="button" aria-label="Save Markdown as" title="Save a local copy of the displayed Markdown" disabled>Save As…</button>
       <button class="preview-document-close" type="button" aria-label="Close document preview" title="Close document preview">Close</button>
     </header>
@@ -62,7 +63,7 @@ export function createPreviewDocument({ container, workspaceId, api, openExterna
     onOpen(path) { return requested && open({ ...requested, path }); },
     onError(error) { showStatus(errorMessage(error), 'error'); },
   });
-  const media = createFileMediaPreview({ container: mediaHost, onError(error) { showStatus(errorMessage(error), 'error'); } });
+  const media = createFileMediaPreview({ container: mediaHost, controlsHost: element.querySelector('.preview-document-controls'), onError(error) { showStatus(errorMessage(error), 'error'); } });
 
   function ensureConnection({ target, root }) {
     if (connection && connection.target === target && (connection.inputRoot === root || connection.root === root) && !connection.failed) return connection;

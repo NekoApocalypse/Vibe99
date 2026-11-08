@@ -6,6 +6,8 @@
   min-height: 39px; padding: 6px 12px; border-bottom: 1px solid var(--preview-border);
 }
 .preview-document-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.preview-document-controls { flex: 0 1 auto; min-width: 0; overflow-x: auto; }
+.preview-document-controls:empty { display: none; }
 .preview-document :is(.preview-document-close, .preview-document-save, .preview-document-retry) {
   flex: 0 0 auto; border: 1px solid transparent; border-radius: 4px;
   padding: 3px 7px; background: transparent; color: var(--preview-muted); font: inherit; font-size: 11px; cursor: pointer;
@@ -19,10 +21,11 @@
 .preview-document .markdown-preview { padding-top: 24px; }
 .file-media-preview { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .file-media-preview > img { display: block; max-width: calc(100% - 32px); max-height: calc(100% - 32px); object-fit: contain; margin: auto; cursor: zoom-in; }
-.file-media-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--preview-border); }
-.file-media-toolbar button, .file-media-toolbar input { background: #263637; color: #f4f1e8; border: 1px solid #455353; border-radius: 4px; padding: 4px 8px; font: inherit; }
-.file-media-toolbar input { width: 70px; }
+.file-media-toolbar { display: flex; align-items: center; gap: 4px; width: max-content; white-space: nowrap; font-size: 11px; }
+.file-media-toolbar button, .file-media-toolbar input { color: var(--preview-muted); border: 1px solid transparent; border-radius: 4px; padding: 3px 7px; font: inherit; background: transparent; }
+.file-media-toolbar input { width: 48px; border-color: var(--preview-border); }
 .file-media-toolbar button { cursor: pointer; }
+.file-media-toolbar button:hover:not(:disabled) { background: #263637; color: #f4f1e8; }
 .file-media-toolbar button:disabled { opacity: .4; cursor: default; }
 .file-media-viewport { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .file-media-viewport canvas { display: block; margin: 0 auto; background: white; }

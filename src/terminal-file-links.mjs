@@ -47,7 +47,7 @@ export function parseFileReference(value) {
   return result;
 }
 
-function findReferences(text) {
+export function findReferences(text) {
   const results = [], quotedSpans = [];
   const markdownSpans = [...text.matchAll(/\[[^\]\r\n]*\]\([^\r\n]*?\)/g)]
     .map(match => [match.index, match.index + match[0].length]);

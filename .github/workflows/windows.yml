@@ -41,6 +41,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:link-cache
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:wrapped-links
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:diagrams
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:review

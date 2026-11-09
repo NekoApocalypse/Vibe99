@@ -123,12 +123,13 @@ const { mkdirSync } = require('node:fs');
     assert.deepEqual(dialogs, []);
     const examples = ['https://www.saltdesignsystem.com/salt/foundations/density', 'https://www.saltdesignsystem.com/salt/patterns/navigation', 'https://www.saltdesignsystem.com/salt/patterns/button-bar', 'https://code.visualstudio.com/api/ux-guidelines/overview', 'https://blueprintjs.com/docs/'];
     for (const url of examples) {
+      for (const hardWrap of [false, true]) {
       const cols = await page.evaluate(() => window.__review.paneNodeMap.get('p1').terminal.cols);
-      await emit('p1', '\x1b[2J\x1b[H' + ' '.repeat(cols - 12) + url);
+      await emit('p1', '\x1b[2J\x1b[H' + ' '.repeat(cols - 12) + (hardWrap ? url.slice(0, 12) + '\r\n' + url.slice(12) : url));
       const before = await page.evaluate(() => window.__links.length);
       await page.evaluate(() => { window.__writes = []; });
       await clickTerminalCell(1, 3, false);
-      assert.equal(await page.evaluate(() => window.__links.at(-1)), url, 'soft-wrapped URL continuation opens complete target');
+      assert.equal(await page.evaluate(() => window.__links.at(-1)), url, 'soft/hard-wrapped URL continuation opens complete target');
       assert.equal(await page.evaluate(() => window.__links.length), before + 1, 'exactly one open per gesture');
       assert.deepEqual(await page.evaluate(() => window.__writes), []);
       await page.keyboard.down('Shift');
@@ -137,6 +138,7 @@ const { mkdirSync } = require('node:fs');
       assert.equal(await page.evaluate(() => window.__links.length), before + 1, 'Shift selection does not open URL');
       await clickTerminalCell(1, 3, true);
       assert.equal(await page.evaluate(() => window.__links.length), before + 2, 'Ctrl-click remains supported');
+      }
     }
     await emit('p1', '\x1b[?1000;1006l');
     console.log('PASS: single-click OSC8/plain URLs, five real documentation URLs across soft wraps, Ctrl-click compatibility, Shift selection, and no remote mouse reports');

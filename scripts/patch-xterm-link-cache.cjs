@@ -21,15 +21,25 @@ const hashes = {
 // bytes or this exact patch; repeated npm installs/builds are idempotent.
 const updates = Object.entries(hashes).map(([relative, expected]) => {
   const file = path.join(root, relative), current = fs.readFileSync(file, 'utf8');
+  const intersections = (relative.endsWith('.mjs') ? [['e', 'i'], ['n', 'o']] : [['e', 't'], ['t', 'i']]).map(([start, end]) => [
+    `this._currentLink.link.range.start.y>=${start}&&this._currentLink.link.range.end.y<=${end}`,
+    `this._currentLink.link.range.start.y<=${end}&&this._currentLink.link.range.end.y>=${start}`,
+  ]);
   const renderBefore = relative.endsWith('.mjs')
     ? 'this._register(this._bufferService.onResize(()=>{this._clearCurrentLink(),this._wasResized=!0}))'
     : 'this._register(this._bufferService.onResize((()=>{this._clearCurrentLink(),this._wasResized=!0})))';
   const renderAfter = renderListener + renderBefore;
-  const original = current.replace(after, before).replace(renderAfter, renderBefore);
+  let original = current.replace(after, before).replace(renderAfter, renderBefore);
+  for (const [before, after] of intersections) original = original.replace(after, before);
   if (createHash('sha256').update(original).digest('hex') !== expected || original.split(before).length !== 2 || original.split(renderBefore).length !== 2) {
     throw new Error('Unexpected xterm bundle; refusing to patch ' + relative);
   }
-  return { file, current, patched: original.replace(before, after).replace(renderBefore, renderAfter) };
+  let patched = original.replace(before, after).replace(renderBefore, renderAfter);
+  for (const [before, after] of intersections) {
+    if (patched.split(before).length !== 2) throw new Error('Unexpected wrapped-link render check: ' + relative);
+    patched = patched.replace(before, after);
+  }
+  return { file, current, patched };
 });
 for (const { file, current, patched } of updates) if (current !== patched) fs.writeFileSync(file, patched);
 console.log('Verified xterm 6.0.0 stale-link cache patch (UMD + ESM).');

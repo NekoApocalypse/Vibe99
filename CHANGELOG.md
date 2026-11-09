@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.10.3 - 2026-11-09
+
+### Fixed
+
+- Reconstruct clickable paths and URLs across agy-style separator wraps and terminal-margin hard wraps. Clicking either fragment opens the full target without sending mouse reports to the TUI. Invalidate wrapped link targets when only a continuation row is redrawn.
+
+
 ## 0.10.2 - 2026-11-08
 
 ### Fixed

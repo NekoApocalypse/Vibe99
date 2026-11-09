@@ -24,7 +24,17 @@ The equivalent change in `src/browser/Linkifier.ts` is:
  }));
 ```
 
-The next pointer movement queries the buffer again, even when it returns to the same cell. Existing active-link render handling is retained; the new listener covers rendering with no active link. Stable rows keep their cache, avoiding a full provider scan on every movement over blank cells. Vibe99 does not read private xterm fields from application code, synthesize pointer movements, delay clicks, or change terminal dimensions to work around the cache.
+The next pointer movement queries the buffer again, even when it returns to the same cell. Stable rows keep their cache, avoiding a full provider scan on every movement over blank cells. Vibe99 does not read private xterm fields from application code, synthesize pointer movements, delay clicks, or change terminal dimensions to work around the cache.
+
+For active links spanning multiple rows, both the render listener and `_clearCurrentLink` now test range **intersection** (`link.start.y <= end && link.end.y >= start`), rather than requiring the entire link to fit inside the repainted rows. Redrawing only a continuation row must invalidate the complete target. The patch remains hash-verified and applies to both bundles.
+
+## Application-inserted line breaks
+
+`terminal-wrapped-links.mjs` adds a provider ahead of plain URL/file detection, while keeping explicit OSC8 hyperlinks authoritative. It reconstructs supported file paths and HTTP(S) URLs broken by CRLF/cursor-position redraws at the right margin (up to two padding cells and eight continuation-indent spaces), or at a trailing `-`, `/` or backslash used as a word-wrap boundary inside a target. The separator is preserved. It maps the complete target back to buffer cells and uses the existing mouse gesture interception, so clicking either fragment opens once without sending a mouse report to the TUI.
+
+This is a bounded inference: maximum 32 rows / 16,384 cells, a path prefix before the inferred break, and no joining short rows without a separator, complete file paths, new absolute paths/URIs, headings or list items. Arbitrary newlines without either signal are not reconstructed. Terminal buffers cannot distinguish every deliberately adjacent token from a hard wrap; the provider deliberately limits that ambiguity to the margin and separators. Normal soft wraps keep their existing providers.
+
+`npm run test:wrapped-links` exercises both bundles with real pointer clicks, both fragments, partial-row redraws and Shift selection. Unit tests cover continuation mapping and independent-row exclusions; the full app interaction suite covers soft and hard-wrapped documentation URLs.
 
 ## Maintaining the patch
 

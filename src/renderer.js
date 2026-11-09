@@ -23,6 +23,7 @@ import { encodeTerminalInput } from './terminal-input.mjs';
 import { createTerminalRecovery } from './terminal-recovery.mjs';
 import { normalizeExternalUrl } from './external-links.mjs';
 import { parseFileReference, registerTerminalFileLinks } from './terminal-file-links.mjs';
+import { registerWrappedLinks } from './terminal-wrapped-links.mjs';
 import { previewDirname } from './preview-paths.js';
 import { askPreviewDetails } from './preview-prompt.js';
 import projectDefaults from './default-settings.json';
@@ -1418,6 +1419,11 @@ function createPane(pane) {
     leave: () => node.fileLinks?.setExternalLink(null),
   });
   terminal.loadAddon(fitAddon);
+  const wrappedLinks = registerWrappedLinks(terminal, {
+    getGestures: () => node.fileLinks,
+    openFile: reference => { void openFileBesidePane(pane.id, reference).catch(reportError); },
+    openUrl: handleTerminalLinkActivation,
+  });
   terminal.loadAddon(webLinksAddon);
   // Unicode 11 width tables align xterm.js's wcwidth with what modern CLI
   // apps (Node.js / Ink-based UIs like Claude Code) assume, so CJK
@@ -1474,6 +1480,7 @@ function createPane(pane) {
     terminalHost,
     terminal,
     fitAddon,
+    wrappedLinks,
     sessionReady: false,
     sessionId: null,
     output: null,
@@ -1716,6 +1723,7 @@ function ensurePaneNodes() {
       node.output?.dispose();
       node.recovery?.dispose();
       node.fileLinks?.dispose();
+      node.wrappedLinks?.dispose();
       node.directoryListener?.dispose();
       node.workspace?.dispose();
       if (node.sessionId) bridge.destroyTerminal({ paneId, sessionId: node.sessionId }).catch(reportError);

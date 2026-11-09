@@ -1,7 +1,7 @@
 {
   "name": "vibe99",
   "productName": "Vibe99",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Vibe99 terminal application",
@@ -9,7 +9,8 @@
     "postinstall": "node scripts/patch-xterm-link-cache.cjs && node scripts/prepare-pdf-assets.cjs",
     "previte:build": "node scripts/patch-xterm-link-cache.cjs && node scripts/prepare-pdf-assets.cjs",
     "test:link-cache": "node scripts/test-terminal-link-cache.cjs",
-    "test": "node --test tests/terminal-stream.test.mjs tests/terminal-recovery.test.mjs tests/preview-input.test.mjs tests/terminal-file-links.test.mjs",
+    "test:wrapped-links": "node scripts/test-terminal-wrapped-links.cjs",
+    "test": "node --test tests/terminal-stream.test.mjs tests/terminal-recovery.test.mjs tests/preview-input.test.mjs tests/terminal-file-links.test.mjs tests/terminal-wrapped-links.test.mjs",
     "test:ui": "node scripts/test-terminal-ui.cjs",
     "test:preview": "node scripts/test-document-ui.cjs",
     "test:recovery": "node scripts/test-terminal-recovery.cjs",

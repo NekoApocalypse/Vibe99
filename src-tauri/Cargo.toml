@@ -1,6 +1,6 @@
 [package]
 name = "vibe99"
-version = "0.10.2"
+version = "0.10.3"
 description = "Vibe99 terminal workspace"
 authors = [""]
 edition = "2021"

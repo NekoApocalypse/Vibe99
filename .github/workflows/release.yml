@@ -88,7 +88,11 @@ jobs:
       - name: Verify current links after terminal redraws
         env:
           VIBE99_TEST_BROWSER: chromium
-        run: npm run test:link-cache
+        run: |
+          npm run test:link-cache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:wrapped-links
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify Mermaid interactions and tab closing
         env:

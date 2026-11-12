@@ -16,22 +16,27 @@ export function wrappedReferences(terminal, y) {
     if (cache.has(index)) return cache.get(index);
     const line = buffer.getLine(index);
     if (!line) return null;
-    let text = '', end = 0; const cells = [];
+    let text = '', end = 0, contentLength = 0; const cells = [];
     for (let x = 0; x < Math.min(line.length, cols); x++) {
       const cell = line.getCell(x), width = cell?.getWidth();
       if (!width) continue;
-      const chars = cell.getChars() || ' ';
+      const raw = cell.getChars(), chars = raw || ' ';
       text += chars;
+      if (raw) contentLength = text.length;
       for (let i = 0; i < chars.length; i++) cells.push({ start: { x: x + 1, y: index + 1 }, end: { x: x + width, y: index + 1 } });
       if (chars.trim()) end = x + width;
     }
-    const result = { text: text.trimEnd(), cells, end, wrapped: line.isWrapped };
+    const result = { text: text.trimEnd(), rawText: text.slice(0, contentLength), cells, end, wrapped: line.isWrapped };
     cache.set(index, result); return result;
   }
-  function connects(index) {
-    const left = row(index), right = row(index + 1);
+  function canInferBreak(index) {
+    let leftIndex = index, rightIndex = index + 1;
+    let left = row(leftIndex), right = row(rightIndex);
+    // Padding can overflow into a whitespace-only soft-wrapped row before the
+    // TUI emits CRLF. Skip only those rows, never an intentional blank line.
+    while (left && !left.text && left.wrapped && index - leftIndex < maxRows) left = row(--leftIndex);
+    while (right && !right.text && right.wrapped && rightIndex - index < maxRows) right = row(++rightIndex);
     if (!left || !right) return false;
-    if (right.wrapped) return true;
     if (!right.text.trim()) return false;
     // Word-wrapping TUIs also break at '-' or '/' inside a path, before the
     // margin. Keep the separator: it is part of the target, not prose hyphenation.
@@ -39,10 +44,20 @@ export function wrappedReferences(terminal, y) {
     const next = right.text.trimStart();
     // New links, absolute paths, list items and headings start a new statement.
     if (/^(?:[a-z][a-z0-9+.-]*:|[/\\]|[-*+]\s|#{1,6}\s|\d+[.)]\s)/i.test(next)) return false;
-    if (right.text.length - next.length > 8 || /["'`)>\]}]$/.test(left.text)) return false;
+    if (/["'`)>\]}]$/.test(left.text)) return false;
     const tail = left.text.match(/[^\s"'`<>()[\]{}|]+$/)?.[0];
     if (tail && parseFileReference(tail)) return false;
     return true;
+  }
+  const connects = index => row(index + 1)?.wrapped || canInferBreak(index);
+  function repairAt(index) {
+    const left = row(index - 1), right = row(index);
+    if (!left || !right) return false;
+    if (!right.wrapped) return canInferBreak(index - 1);
+    // A TUI's padding can itself reach the margin and set isWrapped. It is
+    // still display whitespace, not part of an unquoted path or URL.
+    const padding = left.rawText.length > left.text.length || /^\s/.test(right.text) || !right.text;
+    return padding && canInferBreak(index - 1);
   }
   let first = y - 1, last = first;
   if (!row(first)) return [];
@@ -55,16 +70,20 @@ export function wrappedReferences(terminal, y) {
     last++;
   }
   if ((last - first + 1) * cols > MAX_CELLS) return [];
-  let text = ''; const cells = [], hardBreaks = [];
+  let text = ''; const cells = [], repairedBreaks = [], repairedSoftBreaks = [];
   for (let index = first; index <= last; index++) {
     const part = row(index);
-    const hard = index > first && !part.wrapped;
-    const skip = hard ? part.text.length - part.text.trimStart().length : 0;
-    if (hard) hardBreaks.push(text.length);
-    text += part.text.slice(skip);
-    cells.push(...part.cells.slice(skip, part.text.length));
+    const repair = index > first && repairAt(index);
+    const skip = repair ? part.text.length - part.text.trimStart().length : 0;
+    if (repair) {
+      repairedBreaks.push(text.length);
+      if (part.wrapped) repairedSoftBreaks.push(text.length);
+    }
+    const content = index < last && !repairAt(index + 1) ? part.rawText : part.text;
+    text += content.slice(skip);
+    cells.push(...part.cells.slice(skip, content.length));
   }
-  if (!hardBreaks.length) return [];
+  if (!repairedBreaks.length) return [];
   const candidates = findReferences(text).map(match => ({ ...match, target: match.reference }));
   for (const match of text.matchAll(URL_PATTERN)) {
     try {
@@ -74,8 +93,11 @@ export function wrappedReferences(terminal, y) {
   }
   return candidates.flatMap(match => {
     const endIndex = match.index + match.text.length;
-    const breaks = hardBreaks.filter(index => index > match.index && index < endIndex);
+    const breaks = repairedBreaks.filter(index => index > match.index && index < endIndex);
     if (!breaks.length) return [];
+    // Spaces in explicitly quoted filenames can be real. Let the original
+    // whitespace-preserving provider handle those soft wraps.
+    if (/^["'`]/.test(match.text) && repairedSoftBreaks.some(index => index > match.index && index < endIndex)) return [];
     // A bare filename after prose is not a continuation. Require a path/URI
     // prefix before the first inferred break, not merely somewhere afterwards.
     const prefix = text.slice(match.index, breaks[0]);

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { wrappedReferences } from '../src/terminal-wrapped-links.mjs';
+import { registerTerminalFileLinks } from '../src/terminal-file-links.mjs';
 
 function fixture(lines, cols = 30, wrapped = []) {
   const rows = lines.map((text, index) => ({ length: cols, isWrapped: wrapped.includes(index),
@@ -53,6 +54,39 @@ test('does not join short lines, new links, absolute paths, list items, or compl
 test('bounded scans do not emit truncated targets', () => {
   assert.deepEqual(wrappedReferences(fixture(Array(40).fill('a'.repeat(30))), 20), []);
   assert.deepEqual(wrappedReferences(fixture(['a'.repeat(20000)], 20000), 1), []);
+});
+
+test('Gemini continuation padding is ignored for both hard and soft wraps', () => {
+  const targets = [
+    ['/mnt/data/research/cauchy-timeseries/project/issues/ISS-', '15_dev_handoff_authority_and_faithful_protocol.md'],
+    ['/mnt/data/research/cauchy-', 'timeseries/project/15_scale_bounds_and_discovery_scope.md'],
+    ['https://example.com/research/section-', '15-authority'],
+  ];
+  for (const [prefix, suffix] of targets) for (const wrapped of [[], [1]]) for (const indent of [2, 12]) {
+    const t = fixture(['  ' + prefix + '        ', ' '.repeat(indent) + suffix], 140, wrapped);
+    for (const y of [1, 2]) {
+      const link = wrappedReferences(t, y)[0];
+      assert.equal(link?.reference?.path || link?.url, prefix + suffix, JSON.stringify({wrapped,indent,y}));
+      assert.equal(link.range.end.x, indent + suffix.length, 'padding removal keeps hit-test cell positions');
+    }
+  }
+});
+
+test('soft-wrapped quoted paths keep meaningful spaces', () => {
+  const t = fixture(['"/tmp/my-  ', '  notes.md"'], 30, [1]);
+  assert.deepEqual(wrappedReferences(t,1),[], 'quoted paths remain with the whitespace-preserving provider');
+  let provider, links;
+  t.registerLinkProvider = value => { provider = value; return { dispose() {} }; };
+  registerTerminalFileLinks(t, () => {});
+  provider.provideLinks(1, value => { links = value; });
+  assert.equal(links[0].text, '"/tmp/my-    notes.md"');
+});
+
+test('padding-only soft rows are transparent but blank paragraphs are not', () => {
+  const lines = ['/tmp/research/ISS-  ', '     ', '  15_handoff.md'];
+  for (const y of [1,3]) assert.equal(wrappedReferences(fixture(lines,30,[1]),y)[0]?.reference.path,'/tmp/research/ISS-15_handoff.md');
+  assert.deepEqual(wrappedReferences(fixture(lines,30),1),[]);
+  assert.deepEqual(wrappedReferences(fixture(lines,30),3),[]);
 });
 
 test('agy word wraps at path hyphens before the margin, including two paths in one paragraph', () => {

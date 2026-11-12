@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.10.4 - 2026-11-12
+
+### Fixed
+
+- Ignore display whitespace around wrapped terminal paths and URLs, including padded soft wraps, deep indentation and whitespace-only overflow rows. Preserve meaningful spaces in quoted filenames and keep blank paragraphs separate.
+
+
 ## 0.10.3 - 2026-11-09
 
 ### Fixed

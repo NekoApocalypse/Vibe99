@@ -139,9 +139,52 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(()=>saves.at(-1).text),'# Remote snapshot\n','pending save keeps the clicked snapshot');
     await page.evaluate(async()=>{failRead=true;await reader.open({target:null,root:'C:/docs',path:'unreadable.md'});});
     assert(await saveButton.isDisabled(),'failed navigation cannot export the previous document');
+    // Academic tables put math footnote markers directly after numeric results.
+    // Exercise the sanitized renderer through both local and remote document loads.
+    for (const target of [null, 'test-host']) {
+      await page.evaluate(async target => {
+        failRead = false;
+        text = String.raw`# Math markers
+
+| Result | Marker |
+| --- | --- |
+| 5.66e-1$^\dagger$ | dagger |
+| 4.87e-9$^\ddagger$ | double dagger |
+| 6.23e-3$^e$ | letter |
+| 3.74e-6$^*$ | star |
+| **2.01e-3**$^\ddagger$ | bold |
+| Published$^a$ | heading |
+| 2$x+1$ | adjacent math |
+
+$^\dagger$ Not converged. Inline $2.07^\dagger$ and \(x^2\).
+
+Costs: $5 and $10.
+
+Suffix currency: 5$ and 10$.
+
+Escaped: \$^\dagger\$.
+
+Unclosed: $^\dagger
+` + '\n\n`5.66e-1$^\\dagger$`\n\n```latex\n5.66e-1$^\\dagger$\n```';
+        stamp = `math-${target}`;
+        await reader.open({ target, root: '/docs', path: 'math.md' });
+      }, target);
+      assert.equal(await page.locator('tbody tr').count(), 7);
+      for (const row of await page.locator('tbody tr').all()) assert.equal(await row.locator('td').first().locator('.katex').count(), 1);
+      const glyphs = await page.locator('tbody .katex-html').allTextContents();
+      for (const [index, pattern] of [/†/, /‡/, /e/, /[∗*]/, /‡/, /a/, /x.*\+.*1/].entries()) assert.match(glyphs[index], pattern);
+      assert.equal(await page.locator('.katex').count(), 10);
+      assert.equal(await page.locator('.katex-error, code .katex').count(), 0);
+      assert.equal(await page.locator('p').filter({ hasText: 'Costs:' }).textContent(), 'Costs: $5 and $10.');
+      assert.equal(await page.locator('p').filter({ hasText: 'Suffix currency:' }).textContent(), 'Suffix currency: 5$ and 10$.');
+      assert.equal(await page.locator('p').filter({ hasText: 'Escaped:' }).textContent(), 'Escaped: $^\\dagger$.');
+      assert.equal(await page.locator('p').filter({ hasText: 'Unclosed:' }).textContent(), 'Unclosed: $^\\dagger');
+      assert.deepEqual(await page.locator('code').allTextContents(), ['5.66e-1$^\\dagger$', '5.66e-1$^\\dagger$\n']);
+    }
     await page.evaluate(()=>reader.dispose());
     assert.deepEqual(errors, []);
     console.log('Document companion: direct loading, minimal UI, connection reuse, refresh, retry, stale results/events, reconnect, and disposal passed.');
     console.log('Save As: local/remote snapshots, UTF-8/CRLF source, offline export, cancellation, write errors, duplicate suppression and navigation during save passed.');
+    console.log('Math: adjacent numeric footnotes, dagger/double dagger, ordinary math, currency, escapes and literal code passed for local/remote documents.');
   } finally { await browser?.close(); await server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

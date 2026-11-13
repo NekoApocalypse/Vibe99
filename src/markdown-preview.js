@@ -52,7 +52,9 @@ md.inline.ruler.before('escape', 'preview_math', (state, silent) => {
   if (!opener) return false;
   const closer = opener === '\\(' ? '\\)' : opener === '\\[' ? '\\]' : opener;
   const start = at + opener.length;
-  if (opener === '$' && (/\s/.test(source[start] || '') || /\d/.test(source[at - 1] || ''))) return false;
+  // Numeric results can be followed directly by math, e.g. 5.66e-1$^\dagger$.
+  // Currency guards belong at the inside edges and after the closing dollar.
+  if (opener === '$' && /\s/.test(source[start] || '')) return false;
   let end = source.indexOf(closer, start);
   while (end >= 0 && source[end - 1] === '\\') end = source.indexOf(closer, end + closer.length);
   if (end < 0 || end === start) return false;

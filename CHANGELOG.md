@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## 0.10.5 - 2026-11-13
+
+### Fixed
+
+- Render inline math directly after numeric results, including dagger and double-dagger superscript markers in Markdown tables.
+
+
 ## 0.10.4 - 2026-11-12
 
 ### Fixed

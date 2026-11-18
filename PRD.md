@@ -89,7 +89,7 @@ Vibe99 is a desktop terminal workspace for agentic coding. Current stack: Electr
 - [ ] Tab management: add, rename, reorder, close
 - [ ] Settings persistence
 - [ ] Context menu (copy/paste/select all)
-- [ ] Keyboard shortcuts (Ctrl+T, Ctrl+B navigation)
+- [ ] Keyboard shortcuts (Ctrl+T, Ctrl+Shift+B navigation)
 - [ ] App builds successfully on Linux
 - [ ] Binary size < 20MB
 

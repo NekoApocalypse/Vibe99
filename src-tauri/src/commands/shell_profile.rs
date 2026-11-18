@@ -177,6 +177,23 @@ pub fn shell_profile_add(
     })
 }
 
+/// Move one stored profile to another stored profile's position in a single write.
+#[tauri::command]
+pub fn shell_profile_move(app: AppHandle, profile_id: String, target_id: String) -> Result<ShellConfig, String> {
+    let (mut config, mut shell) = read_shell_config(&app)?;
+    let position = |id: &str| shell.profiles.iter().position(|profile| profile.id == id)
+        .ok_or_else(|| format!("profile not found: {id}"));
+    let from = position(&profile_id)?;
+    let to = position(&target_id)?;
+    if from != to {
+        let profile = shell.profiles.remove(from);
+        shell.profiles.insert(to, profile);
+        config["shell"]["profiles"] = serde_json::to_value(&shell.profiles).map_err(|error| error.to_string())?;
+        write_config(&app, &config)?;
+    }
+    Ok(shell)
+}
+
 /// Remove a shell profile by `profile_id`.
 ///
 /// If the removed profile was the default, the default is cleared

@@ -8,3 +8,5 @@ pub mod wsl;
 pub mod terminal_context;
 pub mod clipboard_image;
 pub mod document_export;
+#[cfg(target_os = "macos")]
+mod macos_process;

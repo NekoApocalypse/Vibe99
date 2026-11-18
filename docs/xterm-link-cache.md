@@ -43,3 +43,5 @@ Display padding is ignored on both sides of an inferred break, including deep in
 `scripts/patch-xterm-link-cache.cjs` runs on installation and before Vite builds. It pins xterm to 6.0.0 and verifies each original bundle's SHA256 before applying the change. It accepts its own already-patched output and rejects unexpected files or versions. The installed upstream source maps remain unchanged; the snippet above documents the additions to the compiled bundles.
 
 Run `npm run test:link-cache` to verify the actual bundled behavior. When upgrading xterm, first verify that upstream handles the reproduction, then remove the patch and hooks together. Do not remove the regression test.
+
+The pinned bundle patch also enables Shift selection while a mouse-reporting TUI is active on macOS. It preserves xterm’s optional Option selection and uses the same upstream bundle hashes. The native Mac terminal prompt checks that a Shift gesture leaves the PTY mouse stream unchanged.

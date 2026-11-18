@@ -234,7 +234,15 @@ $remoteCandidates=@($owned.Values | Where-Object {$_.Name -match '^(ssh|plink|pu
         Err(error) => PreviewContext::unknown(error),
     }
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn inspect(pid: u32) -> PreviewContext {
+    if crate::macos_process::is_local(pid) {
+        PreviewContext { kind: "local", target: None, reason: None }
+    } else {
+        PreviewContext::unknown("This remote or multiplexer session needs an explicit file location")
+    }
+}
+#[cfg(not(any(windows, target_os = "macos")))]
 fn inspect(_: u32) -> PreviewContext {
     PreviewContext::unknown("Automatic terminal connection detection is available on Windows")
 }

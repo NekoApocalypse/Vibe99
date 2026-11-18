@@ -28,13 +28,21 @@ const updates = Object.entries(hashes).map(([relative, expected]) => {
   const renderBefore = relative.endsWith('.mjs')
     ? 'this._register(this._bufferService.onResize(()=>{this._clearCurrentLink(),this._wasResized=!0}))'
     : 'this._register(this._bufferService.onResize((()=>{this._clearCurrentLink(),this._wasResized=!0})))';
+  // Vibe99 uses Shift to select in mouse-reporting TUIs on every platform.
+  // Preserve xterm's optional Mac Option gesture as well.
+  const isMac = relative.endsWith('.mjs') ? 'Zt' : 'c.isMac';
+  const forceSelection = 'shouldForceSelection(e){return ' + isMac +
+    '?e.altKey&&this._optionsService.rawOptions.macOptionClickForcesSelection:e.shiftKey}';
+  const shiftSelection = 'shouldForceSelection(e){return e.shiftKey||' + isMac +
+    '&&e.altKey&&this._optionsService.rawOptions.macOptionClickForcesSelection}';
   const renderAfter = renderListener + renderBefore;
-  let original = current.replace(after, before).replace(renderAfter, renderBefore);
+  let original = current.replace(after, before).replace(renderAfter, renderBefore).replace(shiftSelection, forceSelection);
   for (const [before, after] of intersections) original = original.replace(after, before);
   if (createHash('sha256').update(original).digest('hex') !== expected || original.split(before).length !== 2 || original.split(renderBefore).length !== 2) {
     throw new Error('Unexpected xterm bundle; refusing to patch ' + relative);
   }
-  let patched = original.replace(before, after).replace(renderBefore, renderAfter);
+  if (original.split(forceSelection).length !== 2) throw new Error('Unexpected xterm selection rule: ' + relative);
+  let patched = original.replace(before, after).replace(renderBefore, renderAfter).replace(forceSelection, shiftSelection);
   for (const [before, after] of intersections) {
     if (patched.split(before).length !== 2) throw new Error('Unexpected wrapped-link render check: ' + relative);
     patched = patched.replace(before, after);
@@ -42,4 +50,4 @@ const updates = Object.entries(hashes).map(([relative, expected]) => {
   return { file, current, patched };
 });
 for (const { file, current, patched } of updates) if (current !== patched) fs.writeFileSync(file, patched);
-console.log('Verified xterm 6.0.0 stale-link cache patch (UMD + ESM).');
+console.log('Verified xterm 6.0.0 link cache and Shift selection patches (UMD + ESM).');

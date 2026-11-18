@@ -22,7 +22,7 @@ const assert = require('node:assert/strict');
         window.__renderCalls = 0; window.__tabRenderCalls = 0;
         render = (...args) => { window.__renderCalls++; return originalRender(...args); };
         renderTabs = (...args) => { window.__tabRenderCalls++; return originalTabs(...args); };
-        window.__test = { paneNodeMap, renderTabs, beginRenamePane, changePaneShell, recoverMouseInput,
+        window.__test = { paneNodeMap, renderTabs, beginRenamePane, changePaneShell, recoverMouseInput, showContextMenu,
           focusPane, enterNavigationMode, updateStatus, shortcuts: ShortcutsRegistry,
           getFocused: () => focusedPaneId, getPanes: () => panes,
           reorder: () => { panes.reverse(); renderTabs(); } };
@@ -65,6 +65,51 @@ const assert = require('node:assert/strict');
       [...window.__test.paneNodeMap.values()].every(n => n.sessionReady));
 
     await page.evaluate(() => {
+      const legacy = { shortcuts: { 'navigation-mode': { key: 'B', modifiers: ['ctrl'] } } };
+      window.__test.shortcuts.loadShortcutsFromSettings(legacy, 5);
+      if (!window.__test.shortcuts.getShortcutsForSave()['navigation-mode']) throw Error('Lost explicit customization');
+      window.__test.shortcuts.loadShortcutsFromSettings(legacy, 4);
+      window.__test.paneNodeMap.get('p1').terminal.focus();
+    });
+    await page.keyboard.press('Control+b');
+    await page.waitForFunction(() => window.__writes.some(write => write.paneId === 'p1' && write.data === '\x02'));
+    assert.equal(await page.locator('body.is-navigation-mode').count(), 0);
+    await page.keyboard.press('Control+Shift+b');
+    await page.locator('body.is-navigation-mode').waitFor();
+    await page.keyboard.press('x');
+    await page.locator('.tab-close.pending-close').waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.tab-close.pending-close').count(), 0);
+    await page.keyboard.press('Control+Shift+b');
+    await page.keyboard.press('x');
+    await page.locator('.tab-close.pending-close').waitFor();
+    assert.equal(await page.locator('.tab').count(), 3);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Open settings' }).click();
+    await page.getByRole('button', { name: 'Configure keyboard shortcuts' }).click();
+    const newTabRow = page.locator('.shortcut-item').filter({ hasText: 'New Tab' });
+    await newTabRow.locator('.shortcut-edit-btn').click();
+    await page.keyboard.press('Control+Shift+b');
+    await page.getByText('Conflicts with "Navigation Mode"', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    console.log('PASS: Ctrl+B reaches the PTY after upgrade, shifted B enters navigation, and the recorder flags a binding conflict');
+
+    await page.evaluate(() => window.__test.showContextMenu([
+      { label: 'Change Profile', children: [{ label: 'Test shell', action: 'terminal-change-shell:test-shell' }] },
+    ], 1450, 200, 'p1'));
+    await page.getByRole('menuitem', { name: 'Change Profile' }).click();
+    assert(await page.getByRole('menuitem', { name: 'Test shell', exact: true }).isVisible());
+    const submenu = await page.locator('.context-menu-submenu').boundingBox();
+    assert(submenu.x >= 0 && submenu.x + submenu.width <= 1600, 'Submenu stays within the window');
+    await page.getByRole('menuitem', { name: 'Test shell', exact: true }).click();
+    await page.waitForFunction(() => window.__test.getPanes()[0].shellProfileId === 'test-shell');
+    assert.equal(await page.locator('.context-menu').count(), 0);
+    assert.deepEqual(errors, []);
+    console.log('PASS: clicked profile submenu stays open, fits the window and switches its pane');
+
+    await page.evaluate(() => {
       const tab = document.querySelector('[data-pane-id="p2"] .tab-main');
       const rect = tab.getBoundingClientRect();
       const props = { bubbles: true, button: 0, pointerId: 99, clientX: rect.x + 30, clientY: rect.y + 12 };
@@ -74,7 +119,12 @@ const assert = require('node:assert/strict');
     assert.equal(await page.evaluate(() => window.__test.getFocused()), 'p2', 'Tab switches at pointer-up without a double-click timer');
     await page.locator('[data-pane-id="p2"] .tab-main').dblclick();
     assert(await page.locator('.tab-input').isVisible(), 'Native double-click must still rename');
-    await page.locator('.tab-input').press('Escape');
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert(await page.locator('.tab-input').evaluate(el => el === document.activeElement), 'Queued terminal focus must not steal the rename editor');
+    await page.locator('.tab-input').fill('Renamed pane');
+    await page.locator('.tab-input').press('Enter');
+    assert.equal(await page.locator('.tab-input').count(), 0, 'Confirm removes the editor even when pane focus is unchanged');
+    assert.equal(await page.locator('[data-pane-id="p2"] .tab-label').textContent(), 'Renamed pane');
 
     assert.deepEqual(await page.evaluate(() => {
       window.__test.enterNavigationMode();

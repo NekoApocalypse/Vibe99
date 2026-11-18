@@ -72,7 +72,7 @@ const run = promisify(execFile);
     const dialog = page.locator('dialog.diagram-viewer');
     assert(await dialog.evaluate(el => el.matches(':modal')));
     const beforeKeys = await order();
-    await page.keyboard.press('Control+n'); await page.keyboard.press('Control+Tab'); await page.keyboard.press('Control+b');
+    await page.keyboard.press('Control+n'); await page.keyboard.press('Control+Tab'); await page.keyboard.press('Control+Shift+b');
     assert.deepEqual(await order(), beforeKeys, 'modal does not create, cycle or navigate tabs');
     assert(await page.locator(`.tab[data-pane-id="${local}"]`).evaluate(el => el.classList.contains('is-focused')));
     const canvas = page.locator('.diagram-canvas'), box = await canvas.boundingBox();

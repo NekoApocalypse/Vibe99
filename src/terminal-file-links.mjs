@@ -172,10 +172,15 @@ export function registerTerminalFileLinks(terminal, onOpen) {
     }
   };
   const click = event => { if (consumeClick && event.button === 0) { consumeClick = false; consume(event); } };
+  // macOS also emits contextmenu for a Ctrl-click. The link already owns that gesture.
+  const contextMenu = event => {
+    if (event.ctrlKey && !event.shiftKey && (pressed || explicitHovered || hovered)) consume(event);
+  };
   const leave = () => { hovered = null; explicitHovered = null; pressed = null; consumeClick = false; };
   element?.addEventListener('mousedown', down, true);
   element?.addEventListener('mouseup', up, true);
   element?.addEventListener('click', click, true);
+  element?.addEventListener('contextmenu', contextMenu, true);
   element?.addEventListener('mouseleave', leave);
   return {
     // Web/OSC8 providers share the same gesture interception as file links.
@@ -191,6 +196,7 @@ export function registerTerminalFileLinks(terminal, onOpen) {
     element?.removeEventListener('mousedown', down, true);
     element?.removeEventListener('mouseup', up, true);
     element?.removeEventListener('click', click, true);
+    element?.removeEventListener('contextmenu', contextMenu, true);
     element?.removeEventListener('mouseleave', leave);
     },
   };

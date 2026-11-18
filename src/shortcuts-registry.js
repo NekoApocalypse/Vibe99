@@ -172,13 +172,15 @@ export function resetShortcutsToDefaults() {
   refreshActiveKeymap();
 }
 
-export function loadShortcutsFromSettings(settings) {
+export function loadShortcutsFromSettings(settings, version = 0) {
   overrides = {};
   if (settings && typeof settings.shortcuts === 'object' && settings.shortcuts !== null) {
     for (const [id, shortcut] of Object.entries(settings.shortcuts)) {
       if (DEFAULTS_BY_ID[id] && shortcut && Array.isArray(shortcut.modifiers)) {
         // Skip entries that match the current default — old saved defaults
         // should not block keymap updates.
+        // Older releases could persist the former navigation default alongside overrides.
+        if (version < 5 && id === 'navigation-mode' && shortcutsConflict(shortcut, { key: 'b', modifiers: ['ctrl'] })) continue;
         const defaultLegacy = DEFAULTS_BY_ID[id];
         if (
           normalizeLegacyKey(shortcut.key) === normalizeLegacyKey(defaultLegacy.key) &&

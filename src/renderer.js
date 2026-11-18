@@ -202,6 +202,7 @@ function createTauriBridge(tauri) {
     resolveImagePath: payload => invoke('terminal_image_path', payload),
     openExternalUrl: (url) => openUrl(url),
     terminalPreviewContext: payload => invoke('terminal_preview_context', payload),
+    terminalLocalCwd: payload => invoke('terminal_local_cwd', payload),
     workspaceOpen: async (payload) => {
       await Promise.all(listenersReady);
       return invoke('workspace_open', payload);
@@ -218,6 +219,7 @@ function createTauriBridge(tauri) {
     saveSettings: (payload) => invoke('settings_save', { settings: payload }),
     listShellProfiles: () => invoke('shell_profiles_list'),
     addShellProfile: (profile) => invoke('shell_profile_add', { profile }),
+    moveShellProfile: (profileId, targetId) => invoke('shell_profile_move', { profileId, targetId }),
     removeShellProfile: (profileId) => invoke('shell_profile_remove', { profileId }),
     setDefaultShellProfile: (profileId) => invoke('shell_profile_set', { profileId }),
     detectShellProfiles: () => invoke('shell_profiles_detect'),
@@ -253,6 +255,7 @@ let isRenderingTabs = false; // Guard against re-entrant renderTabs calls
 let dragState = null;
 let pendingDragRender = null;
 let currentMode = 'terminal'; // 'terminal' | 'nav'
+let pendingClosePaneId = null;
 let enterNavSourcePaneId = null; // Track which pane was focused when entering nav mode
 let sessionRestoreComplete = false;
 
@@ -493,7 +496,7 @@ function applyPersistedSettings(nextSettings) {
 
   // Load keyboard shortcuts
   if (typeof uiSettings.shortcuts === 'object' && uiSettings.shortcuts !== null) {
-    ShortcutsRegistry.loadShortcutsFromSettings(uiSettings);
+    ShortcutsRegistry.loadShortcutsFromSettings(uiSettings, nextSettings?.version);
   } else {
     ShortcutsRegistry.loadShortcutsFromSettings({});
   }
@@ -565,7 +568,7 @@ function scheduleSettingsSave() {
   pendingSettingsSave = window.setTimeout(() => {
     pendingSettingsSave = null;
     const settingsToSave = {
-      version: 4,
+      version: 5,
       ui: {
         ...settings,
         shortcuts: ShortcutsRegistry.getShortcutsForSave()
@@ -581,7 +584,7 @@ function flushSettingsSave() {
     window.clearTimeout(pendingSettingsSave);
     pendingSettingsSave = null;
     const settingsToSave = {
-      version: 4,
+      version: 5,
       ui: {
         ...settings,
         shortcuts: ShortcutsRegistry.getShortcutsForSave()
@@ -803,7 +806,7 @@ function renderModalShellProfiles(preserveEditor = false) {
       const item = document.createElement('div');
       item.className = `shell-profile-item${profile.id === selectedShellProfileId ? ' is-selected' : ''}${profile.id === defaultShellProfileId ? ' is-default' : ''}${isDetected ? ' is-detected' : ''}`;
       item.dataset.profileId = profile.id;
-      item.draggable = !isDetected;
+
 
       const name = document.createElement('div');
       name.className = 'shell-profile-name';
@@ -854,11 +857,10 @@ function renderModalShellProfiles(preserveEditor = false) {
 
       // Click to select (but not when dragging)
       let isDragging = false;
-      let dragStartTime = 0;
 
       item.addEventListener('click', (e) => {
         if (e.target.closest('.shell-profile-actions')) return;
-        if (isDragging) return;
+        if (isDragging) { isDragging = false; return; }
         selectedShellProfileId = profile.id;
         editingShellProfile = {
           id: profile.id,
@@ -870,63 +872,37 @@ function renderModalShellProfiles(preserveEditor = false) {
         renderModalShellProfiles();
       });
 
-      // Drag events for reordering
       if (!isDetected) {
-        item.addEventListener('dragstart', (e) => {
-          dragStartTime = Date.now();
+        let startY = 0;
+        let target = null;
+        const clearDrag = () => {
+          item.classList.remove('is-dragging');
+          target?.classList.remove('drag-over');
+          target = null;
+        };
+        item.addEventListener('pointerdown', event => {
+          if (event.button !== 0 || event.target.closest('.shell-profile-actions')) return;
+          isDragging = false;
+          startY = event.clientY;
+          item.setPointerCapture(event.pointerId);
+        });
+        item.addEventListener('pointermove', event => {
+          if (!item.hasPointerCapture(event.pointerId) || Math.abs(event.clientY - startY) < 5) return;
           isDragging = true;
           item.classList.add('is-dragging');
-          e.dataTransfer.setData('text/plain', profile.id);
-          e.dataTransfer.effectAllowed = 'move';
-          // Set a drag image if possible
-          if (e.dataTransfer.setDragImage) {
-            e.dataTransfer.setDragImage(item, 0, 0);
-          }
+          target?.classList.remove('drag-over');
+          target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.shell-profile-item:not(.is-detected)');
+          if (target !== item) target?.classList.add('drag-over');
         });
-
-        item.addEventListener('dragend', (e) => {
-          const dragDuration = Date.now() - dragStartTime;
-          // If drag was very short, treat it as a click
-          if (dragDuration < 200) {
-            isDragging = false;
+        item.addEventListener('pointerup', event => {
+          if (!item.hasPointerCapture(event.pointerId)) return;
+          const destination = document.elementFromPoint(event.clientX, event.clientY)?.closest('.shell-profile-item:not(.is-detected)');
+          if (isDragging && destination && destination !== item) {
+            void reorderProfiles(profile.id, destination.dataset.profileId).catch(reportError);
           }
-          setTimeout(() => {
-            isDragging = false;
-          }, 100);
-          item.classList.remove('is-dragging');
-          document.querySelectorAll('.shell-profile-item').forEach(el => {
-            el.classList.remove('drag-over');
-          });
+          clearDrag();
         });
-
-        item.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          e.dataTransfer.dropEffect = 'move';
-          const dragging = document.querySelector('.shell-profile-item.is-dragging');
-          if (dragging && dragging !== item) {
-            item.classList.add('drag-over');
-          }
-        });
-
-        item.addEventListener('dragleave', (e) => {
-          // Only remove drag-over if we're actually leaving the item
-          if (!item.contains(e.relatedTarget)) {
-            item.classList.remove('drag-over');
-          }
-        });
-
-        item.addEventListener('drop', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          item.classList.remove('drag-over');
-          const draggedId = e.dataTransfer.getData('text/plain');
-          const targetId = profile.id;
-
-          if (draggedId !== targetId) {
-            reorderProfiles(draggedId, targetId);
-          }
-        });
+        item.addEventListener('lostpointercapture', clearDrag);
       }
 
       listEl.appendChild(item);
@@ -973,23 +949,11 @@ function cloneProfile(profile) {
   }).catch(reportError);
 }
 
-function reorderProfiles(draggedId, targetId) {
-  const draggedIndex = shellProfiles.findIndex(p => p.id === draggedId);
-  const targetIndex = shellProfiles.findIndex(p => p.id === targetId);
-
-  if (draggedIndex === -1 || targetIndex === -1) return;
-
-  // Remove dragged profile and insert at target position
-  const [draggedProfile] = shellProfiles.splice(draggedIndex, 1);
-  shellProfiles.splice(targetIndex, 0, draggedProfile);
-
-  // Save the new order (add all profiles to persist order)
-  const userProfiles = shellProfiles.filter(p => !detectedShellProfiles.some(dp => dp.id === p.id));
-  const savePromises = userProfiles.map(p => bridge.addShellProfile(p));
-
-  Promise.all(savePromises).then(() => {
-    renderModalShellProfiles();
-  }).catch(reportError);
+async function reorderProfiles(profileId, targetId) {
+  const config = await bridge.moveShellProfile(profileId, targetId);
+  const stored = new Set(config.profiles.map(profile => profile.id));
+  shellProfiles = [...config.profiles, ...detectedShellProfiles.filter(profile => !stored.has(profile.id))];
+  renderModalShellProfiles(true);
 }
 
 function createModalShellProfileEditor() {
@@ -1164,6 +1128,7 @@ async function openFileBesidePane(sourceId, reference) {
   const contextEpoch = node.previewContextEpoch;
   const valid = () => paneNodeMap.get(sourceId) === node && node.sessionId === sessionId && node.previewContextEpoch === contextEpoch;
   try {
+    await syncLocalDirectory(node);
     const path = reference.path;
     const windowsPath = /^[a-z]:[\\/]/i.test(path) || path.startsWith('\\\\');
     const absolute = windowsPath || path.startsWith('/');
@@ -1173,7 +1138,7 @@ async function openFileBesidePane(sourceId, reference) {
     } else if (windowsPath) {
       location = { target: null, root: previewDirname(path), path };
     } else {
-      const context = node.previewMapping ? { kind: 'mapped' } : node.detectedPreviewContext || await bridge.terminalPreviewContext({ paneId: sourceId, sessionId }).catch(() => ({ kind: 'unknown' }));
+      const context = node.previewMapping ? { kind: 'mapped' } : (bridge.platform !== 'darwin' && node.detectedPreviewContext) || await bridge.terminalPreviewContext({ paneId: sourceId, sessionId }).catch(() => ({ kind: 'unknown' }));
       if (!valid()) return;
       if (context.kind === 'local' || context.kind === 'ssh') node.detectedPreviewContext = context;
       const mapping = node.previewMapping;
@@ -1800,13 +1765,16 @@ function focusPane(paneId, options = {}) {
   const node = paneNodeMap.get(paneId);
   if (node && focusTerminal) {
     requestAnimationFrame(() => {
-      node.focus();
+      // Pointer-up schedules terminal focus before dblclick starts the inline
+      // editor. Never let that delayed focus commit/cancel an active rename.
+      if (focusedPaneId === paneId && paneNodeMap.get(paneId) === node && renamingPaneId === null) node.focus();
     });
   }
 }
 
-function addPane(kind = 'terminal') {
+async function addPane(kind = 'terminal') {
   if (kind === 'preview') { void promptPreviewFile(); return; }
+  await syncLocalDirectory(paneNodeMap.get(focusedPaneId));
   const newPane = createPaneData();
   newPane.kind = kind;
   if (kind === 'preview') newPane.terminalTitle = 'Markdown';
@@ -1817,6 +1785,28 @@ function addPane(kind = 'terminal') {
   render(true);
 }
 
+async function syncLocalDirectory(node) {
+  if (bridge.platform !== 'darwin' || !bridge.terminalLocalCwd || !node?.sessionReady) return;
+  const sessionId = node.sessionId;
+  const cwd = await bridge.terminalLocalCwd({ paneId: node.paneId, sessionId }).catch(() => null);
+  if (!cwd || paneNodeMap.get(node.paneId) !== node || node.sessionId !== sessionId) return;
+  const pane = panes.find(p => p.id === node.paneId);
+  if (pane && pane.cwd !== cwd) {
+    pane.cwd = node.cwd = cwd;
+    scheduleSettingsSave();
+  }
+}
+
+// Native directory reads avoid modifying users' zsh/bash startup files. Keep
+// persisted directories current even when the prompt does not emit OSC 7.
+let directorySyncPending = false;
+const directorySyncTimer = bridge.platform === 'darwin' ? window.setInterval(async () => {
+  if (directorySyncPending) return;
+  directorySyncPending = true;
+  try { await Promise.all([...paneNodeMap.values()].map(syncLocalDirectory)); }
+  finally { directorySyncPending = false; }
+}, 1000) : null;
+
 function closePane(index, options = {}) {
   const { destroyTerminal = true } = options;
 
@@ -1826,6 +1816,8 @@ function closePane(index, options = {}) {
   if (!closingPane) {
     return;
   }
+  const restoreInputFocus = options.restoreFocus || closingPane.id === focusedPaneId ||
+    document.activeElement?.closest('.tab, .context-menu');
 
   if (closingPane.id === renamingPaneId) {
     renamingPaneId = null;
@@ -1851,6 +1843,9 @@ function closePane(index, options = {}) {
   recordPaneVisit(focusedPaneId);
 
   render(true);
+  if (restoreInputFocus && currentMode !== 'nav') {
+    paneNodeMap.get(focusedPaneId)?.focus?.();
+  }
 }
 
 function beginRenamePane(index) {
@@ -1885,6 +1880,8 @@ function commitRenamePane(paneId, nextTitle) {
     entry.id === paneId ? { ...entry, title: trimmedTitle || null } : entry
   );
 
+  // The active pane may not change, so focusPane's fast path will not render.
+  render();
   // Return focus to the renamed pane's terminal
   focusPane(paneId, { focusTerminal: true });
 }
@@ -2104,6 +2101,7 @@ function renderPanes(refit = false) {
 }
 
 function render(refit = false) {
+  if (currentMode !== 'nav' || focusedPaneId !== pendingClosePaneId) pendingClosePaneId = null;
   renderTabs();
   renderPanes(refit);
   updateStatus();
@@ -2283,8 +2281,12 @@ function showContextMenu(items, x, y, paneId) {
       continue;
     }
 
-    const row = document.createElement('button');
-    row.type = 'button';
+    const hasChildren = Boolean(item.children?.length);
+    const row = document.createElement(hasChildren ? 'div' : 'button');
+    if (hasChildren) {
+      row.tabIndex = 0;
+      row.setAttribute('aria-haspopup', 'menu');
+    } else row.type = 'button';
     row.className = 'context-menu-item';
     row.setAttribute('role', 'menuitem');
     row.disabled = item.disabled || false;
@@ -2303,6 +2305,11 @@ function showContextMenu(items, x, y, paneId) {
 
     row.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (hasChildren) {
+        row.classList.add('is-open');
+        row.querySelector('.context-menu-submenu button')?.focus();
+        return;
+      }
       hideContextMenu();
       handleMenuAction(item.action, paneId);
     });
@@ -2340,6 +2347,21 @@ function showContextMenu(items, x, y, paneId) {
         submenu.appendChild(childRow);
       }
       row.appendChild(submenu);
+      row.addEventListener('keydown', (event) => {
+        if (event.target !== row || !['Enter', ' ', 'ArrowRight'].includes(event.key)) return;
+        event.preventDefault();
+        row.click();
+      });
+      const positionSubmenu = () => {
+        submenu.style.left = '100%';
+        submenu.style.right = 'auto';
+        if (submenu.getBoundingClientRect().right > window.innerWidth) {
+          submenu.style.left = 'auto';
+          submenu.style.right = '100%';
+        }
+      };
+      row.addEventListener('mouseenter', positionSubmenu);
+      row.addEventListener('click', positionSubmenu);
     }
 
     menu.appendChild(row);
@@ -2417,7 +2439,7 @@ async function showTerminalContextMenu(node, event) {
 
   const items = [
     { label: 'Copy', action: 'terminal-copy', disabled: !node.terminal.hasSelection(), shortcut: '⇧⌘C' },
-    { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text && !clipboardSnapshot.hasImage, shortcut: 'Ctrl+V' },
+    { label: 'Paste', action: 'terminal-paste', disabled: !clipboardSnapshot.text && !clipboardSnapshot.hasImage, shortcut: bridge.platform === 'darwin' ? '⌘V' : 'Ctrl+V' },
     { label: 'Paste Image', action: 'terminal-paste-image', disabled: !clipboardSnapshot.hasImage },
     { type: 'separator' },
     { label: 'Change Color...', action: 'terminal-change-color' },
@@ -2447,14 +2469,6 @@ function showTabContextMenu(paneId, event) {
   if (paneIndex === -1) {
     return;
   }
-
-  paneCycleState = null;
-  focusedPaneId = paneId;
-  recordPaneVisit(paneId);
-  render();
-
-  const pane = panes[paneIndex];
-  const hasCustomColor = pane && pane.customColor !== undefined;
 
   const items = [
     { label: 'Change Color...', action: 'tab-change-color' },
@@ -2597,6 +2611,7 @@ function openTabSwitcher() {
 function pasteImageIntoTerminal(paneId = focusedPaneId) { return pasteClipboard(paneId, { imageOnly: true }); }
 
 function handleMenuAction(action, paneId) {
+  if (typeof action !== 'string') return;
   if (action.startsWith('wheel-diagnostics-')) {
     const owner = paneNodeMap.get(paneId);
     const target = getPaneNode(paneId);
@@ -2641,6 +2656,7 @@ function handleMenuAction(action, paneId) {
   if (action === 'tab-rename') {
     const paneIndex = getPaneIndex(paneId);
     if (paneIndex !== -1) {
+      focusPane(paneId, { focusTerminal: false });
       beginRenamePane(paneIndex);
     }
     return;
@@ -2649,7 +2665,7 @@ function handleMenuAction(action, paneId) {
   if (action === 'tab-close') {
     const paneIndex = getPaneIndex(paneId);
     if (paneIndex !== -1) {
-      closePane(paneIndex);
+      closePane(paneIndex, { restoreFocus: true });
     }
     return;
   }
@@ -2752,10 +2768,9 @@ function getPaneIdAt(index) {
   return panes[index].id;
 }
 
-// Two-step close confirmation state
-let pendingClosePaneId = null;
-
+// Close only after two presses on the same navigation target.
 function requestClosePane(paneId) {
+  if (panes.length < 2) return;
   if (pendingClosePaneId === paneId) {
     // Second press - confirmed
     const index = panes.findIndex((pane) => pane.id === paneId);
@@ -2832,7 +2847,7 @@ const dispatchKeydown = createDispatcher({
 });
 
 window.addEventListener('keydown', (event) => {
-  if (document.querySelector('dialog[open]')) return;
+  if (document.querySelector('dialog[open], .settings-modal-overlay, .shortcut-recorder-overlay')) return;
   const terminal = getPaneNode(focusedPaneId);
   if (terminal?.root.contains(event.target) && isWindowsCtrlVPasteHotkey(event)) {
     event.preventDefault(); event.stopImmediatePropagation();
@@ -3117,6 +3132,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 window.addEventListener('beforeunload', () => {
+  window.clearInterval(directorySyncTimer);
   for (const node of paneNodeMap.values()) node.workspace?.dispose();
   flushSettingsSave();
   removeTerminalDataListener();

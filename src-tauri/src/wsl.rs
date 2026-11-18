@@ -106,9 +106,10 @@ fn decode_utf16le(bytes: &[u8]) -> String {
 /// Convert a Windows path to its WSL equivalent.
 ///
 /// ```
-/// C:\Users\foo     → /mnt/c/Users/foo
-/// C:/Users/foo     → /mnt/c/Users/foo
-/// D:\project       → /mnt/d/project
+/// use vibe99_lib::wsl::windows_to_wsl_path;
+/// assert_eq!(windows_to_wsl_path(r"C:\Users\foo").as_deref(), Some("/mnt/c/Users/foo"));
+/// assert_eq!(windows_to_wsl_path("C:/Users/foo").as_deref(), Some("/mnt/c/Users/foo"));
+/// assert_eq!(windows_to_wsl_path(r"D:\project").as_deref(), Some("/mnt/d/project"));
 /// ```
 ///
 /// Returns `None` for:
@@ -159,7 +160,8 @@ pub fn windows_to_wsl_path(windows_path: &str) -> Option<String> {
 /// Convert a WSL path back to a Windows path.
 ///
 /// ```
-/// /mnt/c/Users/foo → C:\Users\foo
+/// use vibe99_lib::wsl::wsl_to_windows_path;
+/// assert_eq!(wsl_to_windows_path("/mnt/c/Users/foo").as_deref(), Some(r"C:\Users\foo"));
 /// ```
 ///
 /// Returns `None` if the input is not a valid `/mnt/<drive>/...` path.

@@ -32,6 +32,7 @@ fn main() {
             terminal::terminal_resize,
             terminal::terminal_destroy,
             terminal::get_cwd,
+            terminal::terminal_local_cwd,
             vibe99_lib::clipboard_image::clipboard_snapshot,
             vibe99_lib::clipboard_image::clipboard_capture,
             vibe99_lib::clipboard_image::terminal_image_path,
@@ -42,6 +43,7 @@ fn main() {
             shell_profile::shell_profile_set,
             shell_profile::shell_profile_add,
             shell_profile::shell_profile_remove,
+            shell_profile::shell_profile_move,
             shell_profile::shell_profiles_detect,
             shell_profile::shell_profiles_detect_wsl,
             context_menu::show_context_menu,
@@ -61,6 +63,7 @@ fn main() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                terminal::destroy_all_terminals(&app.state::<AppState>());
                 app.state::<WorkspaceManager>().close_all();
             }
         });

@@ -140,6 +140,7 @@ const { mkdirSync } = require('node:fs');
       assert.equal(await page.evaluate(() => window.__links.length), before + 2, 'Ctrl-click remains supported');
       }
     }
+    assert.equal(await page.getByRole('menu').count(), 0, 'Ctrl-clicking a link must not leave a context menu open');
     await emit('p1', '\x1b[?1000;1006l');
     console.log('PASS: single-click OSC8/plain URLs, five real documentation URLs across soft wraps, Ctrl-click compatibility, Shift selection, and no remote mouse reports');
 
@@ -406,6 +407,16 @@ const { mkdirSync } = require('node:fs');
     await page.locator(`[data-pane-id="${lastTerminal}"] .tab-main`).click({ button: 'middle' });
     assert.deepEqual(await paneOrder(), [lastTerminal], 'last terminal is protected too');
     console.log('PASS: middle-click closes terminal and Markdown tabs once, cleans their resources, preserves background focus and protects the last pane of either type');
+    await page.locator('#tabs-add').click();
+    await page.locator('#tabs-add').click();
+    await focus(lastTerminal);
+    const background = (await paneOrder()).at(-1);
+    await page.locator(`[data-pane-id="${background}"] .tab-main`).click({ button: 'right' });
+    assert.equal(await page.locator('.tab.is-focused').getAttribute('data-pane-id'), lastTerminal);
+    await page.getByRole('menuitem', { name: 'Close Tab', exact: true }).click();
+    assert.equal(await page.locator('.tab.is-focused').getAttribute('data-pane-id'), lastTerminal);
+    assert(!(await paneOrder()).includes(background));
+    console.log('PASS: closing a background tab from its context menu preserves the active terminal');
     console.log('Screenshot: ' + path.resolve('artifacts/review7-ordinary-stacking.png'));
   } finally { await browser?.close(); await server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

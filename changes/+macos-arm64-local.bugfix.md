@@ -1,0 +1,1 @@
+macOS source builds use ad-hoc signing without an Apple Developer account, start Finder-launched terminals in the home folder, and track local shell directories for file previews and restored sessions.

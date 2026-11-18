@@ -14,6 +14,7 @@ export function createClipboardPaste({ bridge, getNode, getActiveId, askTarget, 
         : { text: imageOnly ? '' : await bridge.readClipboardText() };
       if (!current()) return false;
       if (!content.imageId) {
+        node.terminal.focus();
         if (content.text) node.terminal.paste(content.text);
         return Boolean(content.text);
       }
@@ -39,6 +40,7 @@ export function createClipboardPaste({ bridge, getNode, getActiveId, askTarget, 
       if (rememberTarget) node.imagePasteTarget = target;
       // xterm applies bracketed paste according to the TUI's current mode,
       // including when tmux owns that mode. Never append Enter or raw Ctrl+V.
+      node.terminal.focus();
       node.terminal.paste(/\s/.test(path) ? `"${path}"` : path);
       return true;
     } catch (error) {

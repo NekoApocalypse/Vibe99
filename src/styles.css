@@ -278,7 +278,7 @@ body {
 
 .settings-dual {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
+  grid-template-columns: minmax(0, 1fr) minmax(56px, 6ch);
   gap: 8px;
   align-items: center;
 }
@@ -889,7 +889,9 @@ body.is-dragging-tabs {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
-.context-menu-parent:hover > .context-menu-submenu {
+.context-menu-parent:hover > .context-menu-submenu,
+.context-menu-parent.is-open > .context-menu-submenu,
+.context-menu-parent:focus-within > .context-menu-submenu {
   display: block;
 }
 

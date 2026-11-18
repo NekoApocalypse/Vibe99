@@ -29,7 +29,7 @@ export const KEYMAP = [
   { mode: '*',   chord: 'Ctrl+Shift+O',    action: 'toggleCommandPalette',  hint: 'palette',          stopPropagation: true },
   { mode: '*',   chord: 'Ctrl+Tab',        action: 'cycleRecent',           hint: 'recent',           skipInInput: true, stopPropagation: true },
   { mode: '*',   chord: 'Ctrl+Shift+Tab',  action: 'cycleRecentReverse',    hint: 'recent',           skipInInput: true, stopPropagation: true },
-  { id: 'navigation-mode', mode: '*',   chord: 'Ctrl+B',          action: 'enterNav',              hint: 'navigate',         skipInInput: true, stopPropagation: true },
+  { id: 'navigation-mode', mode: '*',   chord: 'Ctrl+Shift+B',          action: 'enterNav',              hint: 'navigate',         skipInInput: true, stopPropagation: true },
   { id: 'new-tab',         mode: '*',   chord: 'Ctrl+N',          action: 'newPane',               hint: 'new pane' },
   { id: 'navigate-left',   mode: '*',   chord: 'Ctrl+ArrowLeft',  action: 'navigateLeft',          hint: '← pane' },
   { id: 'navigate-right',  mode: '*',   chord: 'Ctrl+ArrowRight', action: 'navigateRight',         hint: '→ pane' },
@@ -63,7 +63,7 @@ export const KEYMAP = [
 // A chord like "Ctrl+Shift+C" is split into one or more *alternatives* (joined
 // by `|`) and each alternative is split on `+`. The last token is the key,
 // the rest are modifiers. We treat `Cmd`/`Meta` as `Ctrl` so a chord written
-// `Ctrl+B` fires for both `Ctrl+B` on Linux/Windows and `Cmd+B` on macOS —
+// `Ctrl+Shift+B` fires for both `Ctrl+Shift+B` on Linux/Windows and `Cmd+Shift+B` on macOS —
 // matching the legacy behavior of `shortcuts-registry.js`.
 // ---------------------------------------------------------------------------
 

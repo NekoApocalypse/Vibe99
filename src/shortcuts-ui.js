@@ -185,7 +185,7 @@ export function openKeyboardShortcutsModal(bridge, scheduleSettingsSave) {
 
       const keys = document.createElement('div');
       keys.className = 'shortcut-keys';
-      keys.textContent = ShortcutsRegistry.formatShortcut(shortcut);
+      keys.textContent = ShortcutsRegistry.formatShortcut(shortcut, bridge.platform);
       keys.addEventListener('click', () => {
         startShortcutRecording(id, () => renderModalShortcuts());
       });

@@ -1,53 +1,19 @@
 # Contributing To Vibe99
 
-Vibe99 is a desktop terminal workspace for agentic coding. Contributions should preserve the product’s focus-first interaction model, keep the app buildable on current Electron tooling, and leave behind changelog notes that are clear enough for a human or an agent to review quickly.
+Vibe99 is a desktop terminal workspace for agentic coding. Contributions should preserve the product’s focus-first interaction model, keep the app buildable on current Tauri tooling, and leave behind changelog notes that are clear enough for a human or an agent to review quickly.
 
 ## Local Setup
 
-This repo currently builds and packages cleanly on Node 22, and local app/package commands enforce that requirement.
+Vibe99 uses Tauri 2 with a Rust backend and a Vite/JavaScript frontend. Install Node.js 22.13+ and stable Rust, then run:
 
-If you use `nvm`:
-
-```bash
-nvm use 22
+```sh
+npm ci
+npm run tauri:dev
 ```
 
-Install dependencies:
+Build native bundles with `npm run tauri:build`. On Apple Silicon, follow [the macOS guide](docs/macos-install.md) or run `bash scripts/build-macos.sh`. Local macOS builds use ad-hoc signing and require no Apple Developer account. Windows/Linux releases retain their existing packaging workflows.
 
-```bash
-npm install
-```
-
-Run the app in development:
-
-```bash
-npm start
-```
-
-Build packaged output for the current platform:
-
-```bash
-npm run package
-npm run make
-```
-
-For Linux packaging on Debian or Ubuntu, install the required system tools first:
-
-```bash
-sudo apt install dpkg fakeroot
-```
-
-`npm run package` creates an unpackaged app bundle for the current platform.
-
-`npm run make` creates installable artifacts for the current platform:
-
-- macOS: local-only packaging output
-- Windows: portable `.exe` and `.zip` output
-- Linux: `.AppImage`, `.deb`, and `.zip`
-
-RPM packaging is opt-in and only runs when `rpmbuild` is installed and `VIBE99_ENABLE_RPM=1` is set.
-
-GitHub Releases currently target Linux and Windows. macOS release artifacts are paused until enough user demand justifies Apple signing and notarization costs.
+Run `npm test` and `cargo test --manifest-path src-tauri/Cargo.toml --lib`. Native macOS acceptance prompts and the installed-version audit live in [docs/testing/macos](docs/testing/macos/README.md). Browser mocks do not replace native UI checks.
 
 ## Changelog Rules
 

@@ -11,7 +11,7 @@
   <meta property="og:description" content="One focused pane at full width, peripheral vision on the rest. Built with Tauri 2 and Rust for running multiple coding agents.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://nekoapocalypse.github.io/Vibe99/">
-  <meta property="og:image" content="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif">
+  <meta property="og:image" content="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif?v=markdown-preview">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/assets/icons/icon.png">
   <script type="application/ld+json">
@@ -26,7 +26,7 @@
     "downloadUrl": "https://github.com/NekoApocalypse/Vibe99/releases",
     "codeRepository": "https://github.com/NekoApocalypse/Vibe99",
     "license": "https://www.gnu.org/licenses/gpl-3.0.html",
-    "softwareVersion": "0.7.3"
+    "softwareVersion": "0.10.5"
   }
   </script>
   <style>
@@ -204,7 +204,8 @@
       </div>
       <h1>Vibe99</h1>
       <div class="cta-bar">
-        <a class="btn btn-primary" href="https://github.com/NekoApocalypse/Vibe99/releases">Download Latest Release (v0.7.3)</a>
+        <a class="btn btn-primary" href="https://github.com/NekoApocalypse/Vibe99/releases">Windows &amp; Linux downloads</a>
+        <a class="btn btn-secondary" href="https://github.com/NekoApocalypse/Vibe99/blob/main/docs/macos-install.md">Install on Apple Silicon</a>
         <a class="btn btn-secondary" href="https://github.com/NekoApocalypse/Vibe99">View on GitHub</a>
       </div>
     </header>
@@ -216,13 +217,13 @@
       <p>一个人同时跑四五个 Coding Agent 已经是常态。但传统终端只有两种糟糕的选择：切标签页会把后台 Agent 彻底藏起来，跑完了也忘看；十字分屏又把每个窗口挤成豆腐块，哪一个都看不清。</p>
       <p>所以我做了 <strong>Vibe99</strong>——一个按 <strong>「一主聚焦、余光巡视」</strong> 设计的 Agent 终端工作台。当前操作的终端永远保持全宽可读，其余终端层叠在侧，所有 Agent 的动静尽收眼底。</p>
 
-      <img class="demo-shot" src="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif" alt="Vibe99 workspace">
+      <img class="demo-shot" src="https://raw.githubusercontent.com/NekoApocalypse/Vibe99/main/artifacts/readme-demo.gif?v=markdown-preview" alt="Terminal panes sliding into a Markdown preview with an image and a Mermaid flowchart">
 
       <ul>
         <li><strong>Stacked layout at a glance.</strong> Your active terminal stays wide and readable in the foreground while background panes stack along the edges. You can always see which agents are still streaming output and which ones are waiting for your next prompt.</li>
         <li><strong>High-contrast palette to lock onto any agent visually.</strong> Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.</li>
         <li><strong>Fully customizable UI.</strong> Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.</li>
-        <li><strong>Full keyboard control, zero mouse required.</strong> Cycle recent panes with <code>Ctrl+Tab</code>, step left or right with <code>Ctrl+Left</code> and <code>Ctrl+Right</code>, fuzzy-search tabs via the command palette (<code>Ctrl+Shift+O</code>), or enter Vim-style navigation mode (<code>Ctrl+B</code>) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.</li>
+        <li><strong>Full keyboard control, zero mouse required.</strong> Cycle recent panes with <code>Ctrl+Tab</code>, step left or right with <code>Ctrl+Left</code> and <code>Ctrl+Right</code>, fuzzy-search tabs via the command palette (<code>Ctrl+Shift+O</code>), or enter Vim-style navigation mode (<code>Ctrl+Shift+B</code>) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.</li>
         <li><strong>Native Tauri 2 + Rust performance.</strong> Powered by Tauri 2 and WebGL-accelerated rendering in a <strong>~5 MiB</strong> native installer. Launches fast, stays light on memory, and automatically restores your pane layout, working directories, and tab titles on restart.</li>
         <li><strong>Power features for multi-agent workflows.</strong> Optional <strong>breathing alerts</strong> softly pulse a background pane when its output finishes settling; <strong>customizable Shell Profiles</strong> let you configure and switch shells per pane; and <strong>Windows WSL integration</strong> discovers your installed Linux distributions in one click.</li>
       </ul>
@@ -230,6 +231,7 @@
       <h2>Getting started</h2>
       <ol>
         <li><strong>Download a release.</strong> Windows (<code>.msi</code>, <code>-setup.exe</code>) and Linux (<code>.deb</code>, <code>.AppImage</code>, <code>.rpm</code>) installers are published on <a href="https://github.com/NekoApocalypse/Vibe99/releases">GitHub Releases</a>.</li>
+        <li><strong>Apple Silicon Macs.</strong> Give your coding agent the <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/docs/macos-install.md">macOS install guide</a> to build and install locally without an Apple Developer account.</li>
         <li><strong>Preferred for source builds: let your agent do it.</strong> Copy <code>https://github.com/NekoApocalypse/Vibe99</code> into your coding agent (Claude Code, Codex, Antigravity, or OpenCode) and ask it to build and launch Vibe99.</li>
         <li><strong>Build it yourself.</strong> Requires Node.js 22+ and a stable Rust toolchain.
           <pre><code>npm ci
@@ -249,7 +251,7 @@ npm run tauri:dev</code></pre>
           <tr><td><code>Ctrl+Tab</code> / <code>Ctrl+Shift+Tab</code></td><td>Cycle through recently visited panes</td></tr>
           <tr><td><code>Ctrl+Left</code> / <code>Ctrl+Right</code></td><td>Move focus to the adjacent pane on the left or right</td></tr>
           <tr><td><code>Ctrl+Shift+O</code> (<code>Cmd+Shift+O</code>)</td><td>Open the command palette and jump to any pane by title</td></tr>
-          <tr><td><code>Ctrl+B</code></td><td>Enter navigation mode (<code>H</code>/<code>L</code> or arrows to move, <code>1</code>–<code>9</code> to jump, <code>N</code> new, <code>R</code> rename, <code>X</code> close, <code>Enter</code> focus)</td></tr>
+          <tr><td><code>Ctrl+Shift+B</code> / <code>⌘⇧B</code></td><td>Enter navigation mode (<code>H</code>/<code>L</code> or arrows to move, <code>1</code>–<code>9</code> to jump, <code>N</code> new, <code>R</code> rename, <code>X</code> close, <code>Enter</code> focus)</td></tr>
           <tr><td><code>Ctrl+Shift+C</code> / <code>Ctrl+Shift+V</code></td><td>Copy or paste in the focused terminal</td></tr>
           <tr><td><code>Ctrl+Shift+M</code></td><td>Recover mouse input after an interrupted SSH or TUI session</td></tr>
         </tbody>
@@ -258,7 +260,7 @@ npm run tauri:dev</code></pre>
 
       <h2>Limitations</h2>
       <ul>
-        <li><strong>Release platforms:</strong> Prebuilt installers target <strong>Windows (x64)</strong> and <strong>Linux (x86_64)</strong>. <strong>macOS</strong> users can build and run from source (<code>npm run tauri:build</code>), as prebuilt macOS artifacts are paused until Apple signing and notarization are worth the cost.</li>
+        <li><strong>Release platforms:</strong> Prebuilt installers target <strong>Windows (x64)</strong> and <strong>Linux (x86_64)</strong>. The Apple Silicon source build passed <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/docs/testing/macos/results.md">44 local checks on macOS 26.2</a>. SSH validation on Mac is deferred.</li>
         <li><strong>Windows code signing:</strong> SignPath Foundation onboarding is in progress (<a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CODE_SIGNING.md">Code signing policy</a>). Releases up to <code>v0.7.3</code> are unsigned and may show a Windows SmartScreen prompt on first launch.</li>
         <li><strong>Out of scope:</strong> Code editors, file trees, Git GUIs, and remote agent daemons. Vibe99 is a fast, focused terminal workspace for running and supervising agents—pair it with <a href="https://github.com/NekoApocalypse/owlet">Owlet</a> when you want a fast reader and editor for the files your agents produce.</li>
       </ul>
@@ -272,7 +274,7 @@ npm run tauri:dev</code></pre>
         <li><strong>层叠布局，一览无余</strong>：主窗口大宽度居中清晰呈现，其余终端层叠排布在视野两侧，不用来回切窗口也能一眼看清每个 Agent 是在跑任务还是在等指令。</li>
         <li><strong>高辨识度调色盘，用视觉锁定 Agent</strong>：内置 Okabe-Ito 高对比度调色盘，每个面板的标签页与背景蒙版都带有专属主题色，多开窗口时靠直觉和颜色就能瞬间锁定目标 Agent。</li>
         <li><strong>UI 全面可调</strong>：主面板宽度、终端透明度、后台蒙版浓度，以及本机任意等宽字体均可自由调节，按你的屏幕尺寸与阅读习惯定制最舒服的视野。</li>
-        <li><strong>丰富的快捷键支持，纯键盘也能行云流水</strong>：支持 <code>Ctrl+Tab</code> 按最近访问切换、<code>Ctrl+Left</code> / <code>Ctrl+Right</code> 左右平移、<code>Ctrl+Shift+O</code> 呼出命令面板模糊搜索，或按 <code>Ctrl+B</code> 进入导航模式（<code>H</code>/<code>L</code> 移动、数字键 <code>1</code>–<code>9</code> 直达、新建/重命名/关闭面板），所有快捷键均支持自定义。</li>
+        <li><strong>丰富的快捷键支持，纯键盘也能行云流水</strong>：支持 <code>Ctrl+Tab</code> 按最近访问切换、<code>Ctrl+Left</code> / <code>Ctrl+Right</code> 左右平移、<code>Ctrl+Shift+O</code> 呼出命令面板模糊搜索，或按 <code>Ctrl+Shift+B</code> 进入导航模式（<code>H</code>/<code>L</code> 移动、数字键 <code>1</code>–<code>9</code> 直达、新建/重命名/关闭面板），所有快捷键均支持自定义。</li>
         <li><strong>Tauri 2 + Rust 原生轻量体验</strong>：基于 Tauri 2 与 WebGL 硬件加速渲染打造，原生安装包仅 <strong>~5 MiB</strong>，启动快、内存占用低、滚屏丝滑，重启后自动恢复面板布局、工作目录与标签页标题。</li>
         <li><strong>更多贴合多 Agent 的进阶功能</strong>：支持<strong>呼吸灯提醒</strong>（后台 Agent 输出结束静止后柔光闪烁提示）、<strong>Shell Profiles 管理</strong>（按面板自由切换或定制不同终端环境）以及 <strong>Windows WSL 支持</strong>（一键探测并接入本机已安装的 Linux 发行版）。</li>
       </ul>
@@ -280,6 +282,7 @@ npm run tauri:dev</code></pre>
       <h2>快速开始</h2>
       <ol>
         <li><strong>直接下载安装包。</strong> 前往 <a href="https://github.com/NekoApocalypse/Vibe99/releases">GitHub Releases</a> 下载 Windows（<code>.msi</code>、<code>-setup.exe</code>）或 Linux（<code>.deb</code>、<code>.AppImage</code>、<code>.rpm</code>）安装包。</li>
+        <li><strong>Apple 芯片 Mac。</strong>把<a href="https://github.com/NekoApocalypse/Vibe99/blob/main/docs/macos-install.md">安装指南</a>交给你的编程助手，即可在本机编译安装，无需 Apple 开发者账号。</li>
         <li><strong>从源码构建（推荐交给你的 Agent）。</strong> 把仓库地址 <code>https://github.com/NekoApocalypse/Vibe99</code> 丢给你常用的 Coding Agent（Claude Code、Codex、Antigravity、OpenCode 等），让它直接构建并启动 Vibe99。</li>
         <li><strong>手动构建。</strong> 环境要求：Node.js 22+ · Rust stable 工具链。
           <pre><code>npm ci
@@ -299,7 +302,7 @@ npm run tauri:dev</code></pre>
           <tr><td><code>Ctrl+Tab</code> / <code>Ctrl+Shift+Tab</code></td><td>按最近访问记录在面板间切换</td></tr>
           <tr><td><code>Ctrl+Left</code> / <code>Ctrl+Right</code></td><td>向左 / 向右切换到相邻面板</td></tr>
           <tr><td><code>Ctrl+Shift+O</code>（<code>Cmd+Shift+O</code>）</td><td>打开命令面板，模糊搜索标题并跳转</td></tr>
-          <tr><td><code>Ctrl+B</code></td><td>进入导航模式（<code>H</code>/<code>L</code> 或方向键移动，<code>1</code>–<code>9</code> 直达，<code>N</code> 新建，<code>R</code> 重命名，<code>X</code> 关闭，<code>Enter</code> 聚焦）</td></tr>
+          <tr><td><code>Ctrl+Shift+B</code> / <code>⌘⇧B</code></td><td>进入导航模式（<code>H</code>/<code>L</code> 或方向键移动，<code>1</code>–<code>9</code> 直达，<code>N</code> 新建，<code>R</code> 重命名，<code>X</code> 关闭，<code>Enter</code> 聚焦）</td></tr>
           <tr><td><code>Ctrl+Shift+C</code> / <code>Ctrl+Shift+V</code></td><td>在当前终端内复制 / 粘贴</td></tr>
           <tr><td><code>Ctrl+Shift+M</code></td><td>SSH 或 TUI 异常中断后一键恢复鼠标输入状态</td></tr>
         </tbody>
@@ -307,7 +310,7 @@ npm run tauri:dev</code></pre>
 
       <h2>当前局限</h2>
       <ul>
-        <li><strong>平台安装包</strong>：目前提供 <strong>Windows (x64)</strong> 与 <strong>Linux (x86_64)</strong> 预编译安装包。<strong>macOS</strong> 预编译包在 Apple 签名与公证成本划算前暂停发布，macOS 用户可直接从源码构建运行（<code>npm run tauri:build</code>）。</li>
+        <li><strong>平台安装包</strong>：目前提供 <strong>Windows (x64)</strong> 与 <strong>Linux (x86_64)</strong> 预编译安装包。Apple 芯片源码构建版已在 macOS 26.2 上通过<a href="https://github.com/NekoApocalypse/Vibe99/blob/main/docs/testing/macos/results.md">全部 44 项本地测试</a>。Mac 上的 SSH 功能尚待验证。</li>
         <li><strong>Windows 代码签名</strong>：正在接入 SignPath Foundation 开源签名（详见 <a href="https://github.com/NekoApocalypse/Vibe99/blob/main/CODE_SIGNING.md">Code Signing Policy</a>）。<code>v0.7.3</code> 及更早版本的 Windows 安装包尚未签名，首次运行可能触发系统 SmartScreen 提示。</li>
         <li><strong>不做的功能</strong>：内置代码编辑器、文件树、Git 图形界面或远端常驻守护进程。Vibe99 专注于让你高效并行操控多个终端 Agent——如果你需要极速审阅和编辑 Agent 产出的文档与代码，推荐配合 <a href="https://github.com/NekoApocalypse/owlet">Owlet</a> 一起使用。</li>
       </ul>

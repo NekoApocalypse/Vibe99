@@ -109,9 +109,29 @@ pub fn destroy_all_terminals(state: &AppState) {
 /// Used by the frontend to derive the default tab title (directory basename).
 #[tauri::command]
 pub fn get_cwd() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    if std::env::current_dir().ok().as_deref() == Some(std::path::Path::new("/")) {
+        if let Some(home) = std::env::var_os("HOME") {
+            return Ok(std::path::PathBuf::from(home).display().to_string());
+        }
+    }
     std::env::current_dir()
         .map(|p| p.display().to_string())
         .map_err(|e| format!("failed to get cwd: {e}"))
+}
+
+/// The local shell's actual directory, independent of prompt themes and OSC hints.
+#[tauri::command]
+pub fn terminal_local_cwd(state: State<'_, AppState>, pane_id: String, session_id: String) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let pid = state.pty.preview_process_id(&pane_id, &session_id)?;
+        let path = crate::macos_process::cwd(pid)?;
+        if state.pty.preview_process_id(&pane_id, &session_id) != Some(pid) { return None; }
+        return Some(path.to_string_lossy().into_owned());
+    }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (state, pane_id, session_id); None }
 }
 
 // ----------------------------------------------------------------

@@ -11,12 +11,12 @@ One developer now runs four or five coding agents at once. Traditional terminals
 
 所以我做了 **Vibe99**——一个按 **「一主聚焦、余光巡视」** 设计的 Agent 终端工作台。当前操作的终端永远保持全宽可读，其余终端层叠在侧，所有 Agent 的动静尽收眼底。
 
-![Vibe99 workspace](artifacts/readme-demo.gif)
+![Sliding from a terminal to a Markdown preview with an image and a Mermaid flowchart](artifacts/readme-demo.gif)
 
 - **Stacked layout at a glance.** Your active terminal stays wide and readable in the foreground while background panes stack along the edges. You can always see which agents are still streaming output and which ones are waiting for your next prompt.
 - **High-contrast palette to lock onto any agent visually.** Built on the Okabe-Ito colorblind-safe divergent palette, each pane gets a distinct accent color across its tab and background mask so your eyes lock onto the right agent immediately.
 - **Fully customizable UI.** Tune active pane width, pane opacity, background mask opacity, and any installed monospace font until the workspace fits your screen and reading habits.
-- **Full keyboard control, zero mouse required.** Cycle recent panes with `Ctrl+Tab`, step left or right with `Ctrl+Left` and `Ctrl+Right`, fuzzy-search tabs via the command palette (`Ctrl+Shift+O`), or enter Vim-style navigation mode (`Ctrl+B`) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.
+- **Full keyboard control, zero mouse required.** Cycle recent panes with `Ctrl+Tab`, step left or right with `Ctrl+Left` and `Ctrl+Right`, fuzzy-search tabs via the command palette (`Ctrl+Shift+O`), or enter Vim-style navigation mode (`Ctrl+Shift+B`) to jump, create, rename, and close panes purely from the keyboard. Every shortcut is remappable.
 - **Read agent-generated files in a pane.** Click a Markdown, PDF, or image path in terminal output to open a document pane immediately to its right, then drag, focus, and close it like any other pane. PDFs have page and zoom controls; images expand for zoom and pan. Save As exports a local copy to Downloads by default. Local files and simple existing SSH sessions work automatically; see [file preview details and limits](docs/preview-workspaces.md).
 - **Native Tauri 2 + Rust performance.** Powered by Tauri 2 and WebGL-accelerated rendering. Launches fast, stays light on memory, and automatically restores your terminal pane layout, working directories, and tab titles on restart.
 - **Power features for multi-agent workflows.** Optional **breathing alerts** softly pulse a background pane when its output finishes settling; **customizable Shell Profiles** let you configure and switch shells per pane; and **Windows WSL integration** discovers your installed Linux distributions in one click.
@@ -40,6 +40,8 @@ One developer now runs four or five coding agents at once. Traditional terminals
    npm run tauri:build
    ```
 
+For Apple Silicon Macs, use the [no-account macOS installation guide](docs/macos-install.md), including a copyable agent prompt and local build script.
+
 ## Controls
 
 | Shortcut | Action |
@@ -48,7 +50,7 @@ One developer now runs four or five coding agents at once. Traditional terminals
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle through recently visited panes |
 | `Ctrl+Left` / `Ctrl+Right` | Move focus to the adjacent pane on the left or right |
 | `Ctrl+Shift+O` (`Cmd+Shift+O`) | Open the command palette and jump to any pane by title |
-| `Ctrl+B` | Enter navigation mode (`H`/`L` or arrows to move, `1`–`9` to jump, `N` new, `R` rename, `X` close, `Enter` focus) |
+| `Ctrl+Shift+B` / `⌘⇧B` | Enter navigation mode (`H`/`L` or arrows to move, `1`–`9` to jump, `N` new, `R` rename, `X` close, `Enter` focus) |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy or paste in the focused terminal |
 | `Ctrl+Shift+M` | Recover mouse input after an interrupted SSH or TUI session |
 
@@ -56,7 +58,7 @@ Double-click any tab to rename it, drag tabs to reorder panes, or right-click a 
 
 ## Limitations
 
-- **Release platforms:** Prebuilt installers target **Windows (x64)** and **Linux (x86_64)**. **macOS** users can build and run from source (`npm run tauri:build`), as prebuilt macOS artifacts are paused until Apple signing and notarization are worth the cost.
+- **Release platforms:** Prebuilt installers target **Windows (x64)** and **Linux (x86_64)**. Apple Silicon Macs use the local source build described above.
 - **Windows code signing:** SignPath Foundation onboarding is in progress ([Code signing policy](CODE_SIGNING.md)). Current Windows releases are unsigned and may show a Windows SmartScreen prompt on first launch.
 - **Out of scope:** Code editors, file trees, Git GUIs, and remote agent daemons. Vibe99 is a fast, focused terminal workspace for running and supervising agents—pair it with [Owlet](https://github.com/NekoApocalypse/owlet) when you want a fast reader and editor for the files your agents produce.
 
